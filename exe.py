@@ -8,6 +8,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 from PIL import Image, ImageDraw
 import os
+import datetime
 
 ####### セル２（分子の入力）
 from utils import *
@@ -16,6 +17,7 @@ from reimplemented_libraries import CxnUtils
 from model_modules import load_model, predict_templates
 
 config = get_default_config()
+_image_dir="/var/www/html/public/images"
 
 # Create save directory
 name_stem = config["target"].split('/')[-1].split('.')[0]
@@ -51,18 +53,14 @@ intermediate_materials = set()
 expansion_model = load_model('expansion', config, class_num=len(expansion_rules))
 rollout_model = load_model('rollout', config, class_num=len(rollout_rules))
 
-
 #template_scores = json.load(open(config["template_scores"], "r"))
 template_scores = {}
 in_scope_model = load_model('in_scope', config)
 
 
-
 ####### セル３
 start_materials_=list(start_materials)
 start_materials_
-
-
 ####### セル5(ここが詳細設定の入力欄)
 # 引数がない場合はデフォルトのリストを使用
 default_weights = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
@@ -81,13 +79,13 @@ save_tree = sys.argv[4] == 'True' if len(sys.argv) > 4 else False
 expansion_num = int(sys.argv[5]) if len(sys.argv) > 5 else 50
 cum_prob_mod = sys.argv[6] == 'True' if len(sys.argv) > 6 else False
 chem_axon = sys.argv[7] == 'True' if len(sys.argv) > 7 else False
-selection_constant = int(sys.argv[8]) if len(sys.argv) > 8 else 10
-time_limit = int(sys.argv[9]) if len(sys.argv) > 9 else 0
-csrf_token = sys.argv[10]
-
-
-
-
+cui = sys.argv[8]
+csv = sys.argv[9]
+selection_constant = int(sys.argv[10]) if len(sys.argv) > 9 else 10
+time_limit = int(sys.argv[11]) if len(sys.argv) > 10 else 0
+csrf_token = sys.argv[12]
+substance = sys.argv[13]
+#info = sys.argv[13]
 
 config['knowledge']=['all']
 config['knowledge_weights']=knowledge_weights
@@ -99,12 +97,10 @@ config['selection_constant']=selection_constant
 config['time_limit']=time_limit
 config['debug']=True
 
-
-
 ####### セル６(1)
 from mcts_main import Mcts
 from mcts_modules import print_route_HTML, save_route
-
+from myMcts_modules import myPrint_route_HTML
 
 import logging
 logging.basicConfig(
@@ -114,12 +110,11 @@ logging.basicConfig(
 
 logger = logging.getLogger()
 # main process
+
 mcts = Mcts(target_mol, expansion_rules, rollout_rules, start_materials, intermediate_materials, template_scores, config)
 
 #logger.info(f"[INFO] knowledge type: {config['knowledge']}")
 #logger.info("[INFO] start search")
-
-
 
 import time
 
@@ -129,6 +124,18 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 logging.getLogger('PIL').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 route_num = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+
+if len(substance)<1:
+    dt_now=datetime.datetime.now()
+    fn="search_"+str(dt_now.year)+str(dt_now.month).zfill(2)+str(dt_now.day).zfill(2)+str(dt_now.hour).zfill(2)+str(dt_now.minute).zfill(2)+".txt"
+else:
+    fn=substance+".txt"
+import subprocess
+
+if cui=='True':
+    output=f"{_image_dir}/{fn}"
+    if os.path.exists(output):
+        os.remove(output)
 
 for route in range(route_num):
     route_id = route + 1    
@@ -145,5 +152,17 @@ for route in range(route_num):
         leaf_node = leaf_node.parent_node
     else:
         nodes.append(leaf_node)
-    print_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, selection_constant, time_limit, csrf_token, image_dir="/var/www/html/public/images")
-    
+
+    if cui=='True':
+#komai
+        myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles,  route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, substance, selection_constant, time_limit, csrf_token, fn, image_dir=_image_dir)
+    else:
+        print_route_HTML(nodes, is_proven, logger, route_num, smiles,  route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, selection_constant, time_limit, csrf_token, image_dir=_image_dir)
+
+if cui=='True':
+    std=subprocess.run(['python3','make_reports/routeAnalyzer.py','-chem',substance,'-d',_image_dir,'-p','12','-show_subsets'],capture_output=True,text=True).stdout
+#    std=subprocess.run(['python3','make_reports/routeAnalyzer.py','-chem',substance,'-d',_image_dir,'-ppt'],capture_output=True,text=True).stdout
+    with open(_image_dir+"/"+"hint.txt","w") as f:
+#        std=subprocess.run(['which','python3'],capture_output=True,text=True).stdout
+        f.write("Any way ...xx")
+        f.write(std+"\n")
