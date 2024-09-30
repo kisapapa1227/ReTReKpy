@@ -1390,6 +1390,8 @@ else:
     output_file=output_file+'.pdf'
 
 if _web:
+    if not os.path.exists(input_dir+'/report'):
+        os.makedirs(input_dir+'/report')
     output_file=input_dir+'/report/'+output_file
 
 print(input_file)
