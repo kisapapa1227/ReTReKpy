@@ -28,6 +28,8 @@ _web=True
 
 if _web:
     dr='/var/www/html/public/images/tmp' # working directory
+    if not os.path.exists(dr):
+        os.makedirs(dr)
 else:
     dr='tmp' # working directory
 
