@@ -8,7 +8,6 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 from PIL import Image, ImageDraw
 import os
-import datetime
 
 ####### セル２（分子の入力）
 from utils import *
@@ -17,12 +16,11 @@ from reimplemented_libraries import CxnUtils
 from model_modules import load_model, predict_templates
 
 config = get_default_config()
-_image_dir="/var/www/html/public/images"
-
 # Create save directory
 name_stem = config["target"].split('/')[-1].split('.')[0]
 os.makedirs(config["save_result_dir"], exist_ok=True)
 
+_image_dir="/var/www/html/public/images"
 
 # Setup logger
 #level = DEBUG if args.debug else INFO
@@ -33,7 +31,6 @@ config["rollout_rules"]="data/reaction_template_uspto_filtered.sma"
 config["expansion_model"]="model/variables"
 config["expansion_rules"]="data/reaction_template_uspto_filtered.sma"
 gateway = CxnUtils(config['rollout_rules'])
-
 
 # data preparation
 smiles = sys.argv[1]
@@ -57,7 +54,6 @@ rollout_model = load_model('rollout', config, class_num=len(rollout_rules))
 template_scores = {}
 in_scope_model = load_model('in_scope', config)
 
-
 ####### セル３
 start_materials_=list(start_materials)
 start_materials_
@@ -74,18 +70,16 @@ if len(sys.argv) > 3:
         knowledge_weights = default_weights
 else:
     knowledge_weights = default_weights
-    
+
 save_tree = sys.argv[4] == 'True' if len(sys.argv) > 4 else False
 expansion_num = int(sys.argv[5]) if len(sys.argv) > 5 else 50
 cum_prob_mod = sys.argv[6] == 'True' if len(sys.argv) > 6 else False
 chem_axon = sys.argv[7] == 'True' if len(sys.argv) > 7 else False
-cui = sys.argv[8]
-csv = sys.argv[9]
-selection_constant = int(sys.argv[10]) if len(sys.argv) > 9 else 10
-time_limit = int(sys.argv[11]) if len(sys.argv) > 10 else 0
-csrf_token = sys.argv[12]
-substance = sys.argv[13]
-#info = sys.argv[13]
+selection_constant = int(sys.argv[8]) if len(sys.argv) > 8 else 10
+time_limit = int(sys.argv[9]) if len(sys.argv) > 9 else 0
+csrf_token = sys.argv[10]
+csv = sys.argv[11]
+substance = sys.argv[12]
 
 config['knowledge']=['all']
 config['knowledge_weights']=knowledge_weights
@@ -117,6 +111,7 @@ mcts = Mcts(target_mol, expansion_rules, rollout_rules, start_materials, interme
 #logger.info("[INFO] start search")
 
 import time
+import subprocess
 
 # logging設定: DEBUG メッセージを非表示に
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
@@ -124,18 +119,24 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 logging.getLogger('PIL').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 route_num = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+#komai
 
-if len(substance)<1:
-    dt_now=datetime.datetime.now()
-    fn="search_"+str(dt_now.year)+str(dt_now.month).zfill(2)+str(dt_now.day).zfill(2)+str(dt_now.hour).zfill(2)+str(dt_now.minute).zfill(2)+".txt"
-else:
-    fn=substance+".txt"
-import subprocess
+if csv!='False':
+    if len(substance)<1:
+        dt_now=datetime.datetime.now()
+        fn=_image_dir+"/search_"+str(dt_now.year)+str(dt_now.month).zfill(2)+str(dt_now.day).zfill(2)+str(dt_now.hour).zfill(2)+str(dt_now.minute).zfill(2)+".txt"
+    else:
+        fn=_image_dir+"/"+substance+".txt"
 
-if cui=='True':
-    output=f"{_image_dir}/{fn}"
-    if os.path.exists(output):
-        os.remove(output)
+    if os.path.isfile(fn):
+        os.remove(fn)
+
+#    sleep(1)
+    while os.path.isfile(fn):
+        sleep(1)
+
+    with open(fn,"w") as fp:
+        fp.write(f"{smiles}\n")
 
 for route in range(route_num):
     route_id = route + 1    
@@ -153,16 +154,12 @@ for route in range(route_num):
     else:
         nodes.append(leaf_node)
 
-    if cui=='True':
-#komai
-        myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles,  route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, substance, selection_constant, time_limit, csrf_token, fn, image_dir=_image_dir)
+    if csv=='False':
+        print_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, selection_constant, time_limit, csrf_token, image_dir=_image_dir);
     else:
-        print_route_HTML(nodes, is_proven, logger, route_num, smiles,  route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, selection_constant, time_limit, csrf_token, image_dir=_image_dir)
+        myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, substance, selection_constant, time_limit, csrf_token, fn, image_dir=_image_dir);
 
-if cui=='True':
+if csv!='False':
     std=subprocess.run(['python3','make_reports/routeAnalyzer.py','-chem',substance,'-d',_image_dir,'-p','12','-show_subsets'],capture_output=True,text=True).stdout
-#    std=subprocess.run(['python3','make_reports/routeAnalyzer.py','-chem',substance,'-d',_image_dir,'-ppt'],capture_output=True,text=True).stdout
-    with open(_image_dir+"/"+"hint.txt","w") as f:
-#        std=subprocess.run(['which','python3'],capture_output=True,text=True).stdout
-        f.write("Any way ...xx")
-        f.write(std+"\n")
+    with open(fn,"a") as fp:
+        fp.write("reported\n")
