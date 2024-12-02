@@ -292,7 +292,9 @@ def myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, js
     route_summary += f"""<div class='route' data-smiles="{smiles}" data-route-id="{route_id}" data-route-num="{route_num}" data-knowledge-weights="{json_weights}" data-save-tree="{save_tree}" data-expansion-num="{expansion_num}" data-cum-prob-mod="{cum_prob_mod}" data-chem-axon="{chem_axon}" data-selection-constant="{selection_constant}" data-time-limit="{time_limit}"><div class="route-header" onclick="toggleRoute(this);"><h2>Route {route_id}</h2><h5>{message}</h5></div><div class="route-body">"""
     
 #komai
-    with open(f"{image_dir}/{fn}","a") as f:
+    with open(f"{fn}","a") as f:
+        f.write(f"Route:{route_id}\n")
+    with open(f"{fn}_info","a") as f:
         f.write(f"Route:{route_id}\n")
     if int(route_id)==1:
         route_summary +=f'<embed src="http://localhost/images/report/{substance}.pdf" type="application/pdf" width="100%" height="700px"></embed>'
@@ -304,8 +306,11 @@ def myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, js
     rxn_rule = None
     idx = -1
     
+    exInfo=[]
     steps=[]
     for node_index, node in enumerate(nodes):
+        exInfo.append([node.visits,node.total_scores,node.depth,node.state.rxn_rule,node.state.rxn_applied_mol_idx])
+#        exInfo.append([node.visits,"ok"])
         small=[]
         node_label = ""
         if node_index == 0:
@@ -355,15 +360,25 @@ def myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, js
 
         route_summary += f"</div>"
         steps.append(small)
-    
+
     route_summary += f"""<div class="route-footer"><form action="addFavorite" method="POST" class="favorite-form"><input type="hidden" name="_token" value="{csrf_token}"><input type="hidden" name="smiles" value="{smiles}"><input type="hidden" name="route_id" value="{route_id}"><input type="hidden" name="route_num" value="{route_num}"><input type="hidden" name="knowledge_weights" value="{json_weights}"><input type="hidden" name="save_tree" value="{save_tree}"><input type="hidden" name="expansion_num" value="{expansion_num}"><input type="hidden" name="cum_prob_mod" value="{cum_prob_mod}"><input type="hidden" name="chem_axon" value="{chem_axon}"><input type="hidden" name="selection_constant" value="{selection_constant}"><input type="hidden" name="time_limit" value="{time_limit}"><button type="submit" class="btn btn-primary favorite-button">お気に入りに追加</button></form></div>"""
     route_summary += f"""</div></div>"""
 
     if int(route_id)==1:
         logger.info(route_summary)
 
-    with open(f"{image_dir}/{fn}","a") as f:
+    with open(f"{fn}","a") as f:
         for s in steps:
             for i in s:
                 f.write(i+',')
             f.write("\n")
+
+    with open(f"{fn}_info","a") as f:
+        for s in exInfo:
+            for i in s:
+                if i==None:
+                    f.write(',')
+                else:
+                    f.write(str(i)+',')
+            f.write("\n")
+#            f.write(exInfo)
