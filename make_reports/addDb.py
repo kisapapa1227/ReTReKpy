@@ -22,14 +22,16 @@ from pptx.dml.color import RGBColor
 from PIL import Image
 import shutil
 import Levenshtein
+import sqlite3
+import datetime
 
-_web=False
 _web=True
+_web=False
+
+db="sList.db"
 
 if _web:
     dr='/var/www/html/public/images/tmp' # working directory
-    if not os.path.exists(dr):
-        os.makedirs(dr)
 else:
     dr='tmp' # working directory
 
@@ -160,8 +162,14 @@ class openReport:
         else:
             return 50
 
+    def drawPhrase(self,x,y,string,center=False,adj=True):
+        if self.type=='pdf':
+            drawString(self,x,y,string,center=center,adj=adj)
+        else:
+            shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,py)
+            # komai
+
     def drawString(self,x,y,string,center=False,adj=True):
-#        komai
         if self.type=='pdf':
             if center:
                 x+=self.getSpan()*self.scale/2-stringWidth(string,self.font_name,self.font_size)/2
@@ -179,6 +187,7 @@ class openReport:
                 shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),Cm(1),Cm(10))
 
             tf=shape.text_frame
+            tf.word_wrap=True
 #            tf.auto_size=MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
             p=tf.paragraphs[0]
             run=p.add_run()
@@ -247,6 +256,24 @@ def smile2sgv(smiles,name,dr=dr,size=200):
         f.write(svg)
 
     return fc
+
+def getInfo(tg,lines):
+    key='Route:'+str(tg)
+    on=False
+    ret=[]
+    for l in lines:
+        if key in l:
+            on=True
+            continue
+        if on:
+            if 'Route' in l:
+                if len(ret)<1:
+#                    print(l1)
+                    ret.append([l1.split(',')[0]])
+                return ret
+            each=l.split(',')
+            ret.append(each[:-1])
+    return ret
 
 def getSmiles(tg,lines):
     key='Route:'+str(tg)
@@ -619,72 +646,6 @@ def rightEdge(i,fc,cnt,l_fc):
         return i[4]+len(i[7])+2
     return i[4]+len(i[7])+2+fc[cnt][i[1][0]]
 
-def align(c,smiles,s,fc,tite):
-    connect=c
-    m=0
-    l_fc=len(fc)
-    annealed=[]
-    for i in c:
-        if m>i[4]:
-            m=i[4]
-    for i in c:
-        i[4]-=m;
-
-    loop=True
-    depth=0# cleaned floor depth
-    while loop:
-        d=0
-        y0=100
-        y1=-y0
-        x0=s*2
-        loop=False
-        ccc=0
-        for cnt,i in enumerate(c):
-            xx0=rightEdge(i,fc,cnt,l_fc)
-            if xx0 > s:# arrow starting point!
-                loop=True
-                if x0 > i[4]:
-                    x0=i[4]
-                    ccc=cnt
-            elif i[5]<=depth:
-                if y1 < i[5]:
-                    y1=i[5] # smaller 
-                if y0 > i[5]:
-                    y0=i[5] # bigger
-        if loop:
-            for cnt,i in enumerate(c):
-                xx0=rightEdge(i,fc,cnt,l_fc)
-                if xx0 > s:
-                    i[4] -= x0
-                    i[5] += (y0-y1-1)
-        depth+=(y0-y1-1)
-
-        sharpHead=getSharpHead(getGoal(smiles,c),connect)
-        annealHead(sharpHead,connect)
-
-        if tite:
-            span=6
-        else:
-            span=4
-        deep=[0]
-        for n,vv in enumerate(fc):
-            for v in vv.values():
-                i=-c[n][5]
-                while i>=len(deep):
-#                if i>=len(deep):
-                    deep.append(0)
-                if deep[i]<v:
-                    deep[i]=v
-        dx=[0]
-        for n in range(len(deep)-1):
-            dx.append((deep[n]+deep[n+1])/span+dx[n])
-
-        for i in c:
-            if -i[5]<len(dx):
-                i[5]=-int(dx[-i[5]])
-            else:
-                i[5]=i[4]
-        
 def prevEvalHeight(connect):
     depth=0
     for i in range(len(connect)):
@@ -1184,7 +1145,7 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
     if typ=="smiles":
         return ret,ppt
 
-    print("this is submatch",sSubMatch)
+#    print("this is submatch",sSubMatch)
     
     return ret,ppt
 
@@ -1323,255 +1284,160 @@ def deepArrange(routes):
         print()
     return [ok,branch]
 
+def dicToString(ss):
+    r=""
+    for key, value in ss.items():
+        r+=str(key)+":"
+        for k in value:
+            r+=str(k)+","
+        r+=";"
+    return r
+
+def listToString(ss):
+    r=""
+    for s in ss:
+        ll=len(s)
+        for n,l in enumerate(s):
+            if type(l)==list:
+                for i in l:
+                    r+=str(i)+","
+            else:
+                r+=str(l)
+            r+=";"
+        r+="##"
+    return r
+
 ##############################################
 #################### main ####################
 ##############################################
 
-chemical="losartan"
-proc_per_line=10 # how many reactions per line roughly ?
-_fc=True
-_tite=False
-_type=3
-_id=False
-_product_only=False 
-_include_subsets=False
+input_dir="./work"
+script='async.sh'
+user='kisa'
 
-#print(sys.argv)
-ppt=False;chem=None;_routes=[]
-input_dir="./"
-com='-chem chemical_name, -ppt for power point -n [1,2,3] to specify routes -p proc_per_line -d input_path, -one_size : rendering at the same size, -product_only : categolize routes with respct to reaction product only, -show_subsets : show routes including subsets'
-com+=" -summary 0/1/2"
+com='-u user -d input_dir -s script.sh'
 ops={'-h':com}
 skip=False
+
 for n,op in enumerate(sys.argv):
     if skip:
         skip=False;continue
 #    print(n,op)
     match op:
-        case '-h':
-            print(sys.argv[0],ops['-h']);exit()
-        case '-ppt':
-            ppt=True
-        case '-heavy':
-            _type=2
-        case '-atom_number':
-            _type=3
-        case '-one_size':
-            _fc=False
-        case '-show_subsets':
-            _include_subsets=True
-        case '-n':
-            _routes=getList(sys.argv[n+1])
-            skip=True
-        case '-tite':
-            _tite=True
-        case '-sub_id':
-            _id=sys.argv[n+1]
-            skip=True
         case '-d':
             input_dir=sys.argv[n+1]
             skip=True
-        case '-product_only':
-            _product_only=True
-        case '-p':
-            proc_per_line=int(sys.argv[n+1])
+        case '-u':
+            user=sys.argv[n+1]
             skip=True
-        case '-chem':
-            chemical=sys.argv[n+1]
+        case '-s':
+            script=sys.argv[n+1]
             skip=True
 
-input_file=chemical+'.txt'
-if _id:
-    output_file=chemical+str(_id)
-else:
-    output_file=chemical
-
-if ppt:
-    output_file=output_file+'.pptx'
-else:
-    output_file=output_file+'.pdf'
-
-if _web:
-    if not os.path.exists(input_dir+'/report'):
-        os.makedirs(input_dir+'/report')
-    output_file=input_dir+'/report/'+output_file
-
-print(input_file)
-print(output_file)
 #print(_routes)
-print(proc_per_line)
 
-head=None
+input_file="."
+with open(user+"_"+script,"r") as f:
+    for l in f:
+        if '#name' in l:
+            uname=l.split('\n')[0].split('name=')[1]
+        if '#email' in l:
+            email=l.split('\n')[0].split('email=')[1]
+        if 'python3' in l:
+            es=l.split('\n')[0].split(' ')
+            for n,i in enumerate(es):
+                print(n,i)
+smi="".join(es[2].split("'"))
+loop=es[3]
+factor=es[4]
+substance="".join(es[13].split("'"))
 
-print(input_dir+"/"+input_file)
+opts=""
+for i in es[5:11]:
+    if i=='':
+        opts+='Non,'
+    else:
+        opts+=i+','
+#opts=es[5:11]
 
-with open(input_dir+"/"+input_file,"r") as f:
+# output #5-10
+
+input_file=substance+".txt"
+with open(input_dir+"/"+user+"/"+input_file,"r") as f:
     all=f.readlines()
+with open(input_dir+"/"+user+"/"+input_file+"_info","r") as f:
+    all_info=f.readlines()
 
 allRoutes=getAllRoutes(all)
 routeMatrix,ppt=getMatrix(allRoutes,all)
 
 tg="smiles"
-if _product_only:
-    tg="products"
-parent=routeMatrix[tg]
+parent=routeMatrix["smiles"]
 
-if _include_subsets:
-    show='total'
-    com="."
-else:
-    show='sub'
-    com=" and subsets eliminated."
+routes=list(parent['sub'].keys())
 
-print("parent",parent['total'])
-routes=list(parent[show].keys())
+#print("parent",parent,"<---------")
 
-#easy="All output:"+str(len(allRoutes))+", Net output:"+str(len(parent['total']))+", Prime output:"+str(len(parent['sub']))
+conn=sqlite3.connect(db)
+cur=conn.cursor()
 
-print(f"Categolized in respect to {tg}"+com)
+cur.execute('create table if not exists searchList(id integer primary key, user text, uname text, email text, smiles text, cSmiles text, date text, substance text, loop integer, factors text, options text);')
+cur.execute('create table if not exists parent(id integer, total text, sub text);')
+conn.commit()
 
-for r in parent[show]:
-    print(r,parent[show][r])
 
-print("--->",parent[show][r])
-if len(parent[show][r])<1:
-    hint=[False,"No search results"]
-else:
-    hint=deepArrange(parent[show])
-    hint.append(ppt)
+#smiles=getSmiles(routes[0],all)[-1][-1]
+mol=Chem.MolFromSmiles(smi)
+cSmiles=Chem.MolToSmiles(mol)
+dd=datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
-span=proc_per_line*2
-if span<10:
-    span=10
-scale=_magic_x/(span)
+print(opts)
+cur.execute(f'insert into searchList(user, uname, email, smiles, cSmiles, date, substance, loop, factors, options) values("{user}","{uname}","{email}","{smi}","{cSmiles}",{dd},"{substance}",{loop},"{factor}","{opts}")')
+conn.commit()
 
-_py=500
-py=_py
-ox=40
+sql=f'select id from "searchList" where date = "{dd}";'
+ret=cur.execute(sql)
+conn.commit()
 
-if len(_routes)>0:
-    routes=_routes
+total=dicToString(parent['total'])
+sub=dicToString(parent['sub'])
+id=ret.fetchall()[0][0]
 
-page=openReport(output_file,scale)
+print("total",total)
+print(" sub" ,sub)
+sql=f'insert into parent(id, total, sub) values({id},"{total}","{sub}")'
+print(sql)
+cur.execute(sql)
+conn.commit()
 
-#print(head)
-sim=similarityOnRoute(hint[2],hint[0],hint[1],all) 
-easy=str(len(parent['total']))+" variations from "+str(len(sim))+" routes over "+str(len(allRoutes))+" queries"
-hint.append(easy)
-if parent!=False:
-    head=[chemical,getSmiles(routes[0],all),hint]
-else:
-    head=[chemical,getSmiles(1,all),hint]
-head_page(head,page,sim)
+print("----------------------->")
 
+sTable=f"searchTable{id}"
+
+cur.execute(f'create table if not exists "{sTable}" (route int, connect_list text, smiles_list text, info_list text);')
+conn.commit()
+
+#komai
+#print(routes)
 for route in routes:
-    print(f"Route:{route}",end="..")
-    oy=py-scale
-
+    info=getInfo(route,all_info)
     smiles=getSmiles(route,all)
+    connect,start=initConnect(smiles)
+    s1=listToString(connect)
+    s2=listToString(smiles)
+#    print("---->",route)
+#    print("connect",connect)
+#    print("connect(s1)",s1)
+#    print(smiles)
+#    print("smiles(s2)",s2)
+#    print(info)
+    s3=listToString(info)
+    sql=f'insert into {sTable} values({route},"{s1}","{s2}","{s3}");'
+#    print("sql",sql)
+    cur.execute(sql)
+    conn.commit()
 
-    fc=makeSgv(smiles)
-
-    if not _fc:
-        fc=_fc
-
-    connect,start=initConnect(smiles,fc=fc,mode=_type)
-    Debug(connect,head='G',sp=5)
-#
-    align(connect,smiles,span-3,fc,_tite)
-    Debug(connect,head='H',sp=5)
-    hy=evalHeight(connect,fc)
-
-    if fc:
-        setWds(connect,fc)
-
-    if oy+hy*scale*2<0:
-        page.stroke()
-        py=_py
-        oy=py-scale
-    page.setFont()
-
-    tmp_goal=[]
-    for i in range(len(connect)):
-        x0=connect[i][4]*scale+ox
-        y0=connect[i][5]*scale*2+oy
-
-        if fc:
-            wds=fc[i]['s']
-        if len(connect[i][2])<1:
-            fn=getName(i,connect[i][6]+1)# need
-#            print("starting",i,fn,x0,y0)
-            if not fc:
-                page.drawImage(fn,x0,y0,scale) # for starting material
-            else:
-#                wds=fc[i][connect[i][6]]
-                page.drawImage(fn,x0,y0,scale*wds) # for starting material
-        n=connect[i][3]
-#    if n<0:
-#        continue
-        if n<0:# for goal
-            if not fc:
-                xx= x0+(len(connect[i][7])+2)*scale
-            else:
-                if i<len(fc):
-                    sp=len(connect[i][7])+2
-                else:
-                    sp=len(connect[i][7])+2
-
-#                    xx=x0+(fc[-1]['cheat']+fc[i][connect[i][6]])*scale
-                xx=x0+(wds+sp)*scale
-            yy= y0
-            if len(tmp_goal)<1 and n==-1:
-                tmp_goal=[xx,yy]
-        else:
-            xx=connect[n][4]*scale+ox
-            yy=connect[n][5]*scale*2+oy
-
-        if connect[i][1][0]>-1:
-#        if connect[i][3]>-1:
-            fn=getName(i,connect[i][1][0]+1)
-#            print("result",i,fn,xx,yy)
-            if not fc:
-                page.drawImage(fn,xx,yy,scale) # for resultant material
-                xp=x0+scale*1.5
-            else:
-                page.drawImage(fn,xx,yy,scale*fc[i][connect[i][1][0]]) # for resultant material
-                xp=x0+scale*(0.5+wds)
-
-        for j in connect[i][-1]:
-            fn=getName(i,j+1)
-#            page.drawImage(fn,xp,y0+step*0.55,scale) # for catalytic material
-            if not fc:
-                page.drawImage(fn,xp,y0,scale,bt=True) # for catalytic material
-                xp=xp+scale
-            else:
-#                page.drawImage(fn,xp,y0,scale*fc[i][j],bt=True) # for catalytic material
-#                fx=fc[i][j] if fc[i][j]<2 else 1
-                fx=1
-                page.drawImage(fn,xp,y0,scale*fx,bt=True) # for catalytic material
-                xp=xp+fc[i][j]*scale
-#        page.drawArrow(arrow(x0,y0,xx,yy,scale)) 
-        if n<0 and len(tmp_goal)>0:# for goal
-            xx=tmp_goal[0]
-            yy=tmp_goal[1]
-## komai
-#
-        if not fc:
-            page.drawArrow(arrow(x0,y0,xx,yy,scale)) 
-        else:
-            skip=wds
-#            print("arrow:",n,wds,x0,xx,xx-x0,skip)
-            page.drawArrow(arrow(x0,y0,xx,yy,scale,skip=skip,fc=fc))
-
-        if fc:
-            py=oy+getTheBottom(connect,fc)*scale
-        else:
-            if py>y0-scale:
-                py=y0-scale
-
-    page.drawString(ox,oy+scale*1.5,"Route"+str(route))
-
-#for i in range(10):
-#    page.drawLine([0,i,10,i])
-page.close()
 print("end")
+
+print(f"substance:{substance}###")
+conn.close()

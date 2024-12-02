@@ -22,14 +22,13 @@ from pptx.dml.color import RGBColor
 from PIL import Image
 import shutil
 import Levenshtein
+import sqlite3
 
 _web=False
 _web=True
 
 if _web:
     dr='/var/www/html/public/images/tmp' # working directory
-    if not os.path.exists(dr):
-        os.makedirs(dr)
 else:
     dr='tmp' # working directory
 
@@ -61,8 +60,8 @@ class openReport:
             self.slide = self.page.slides.add_slide(blank_slide_layout)
             self.file=file
             self.font_name="Times-Bold"
-            self.font_size=14 # 14<-16 
-            self._font_size=14 #
+            self.font_size=12 # 14<-16 
+            self._font_size=12 #
 
     def getSpan(self):
 #       scale=_magic_x/(span)
@@ -161,7 +160,6 @@ class openReport:
             return 50
 
     def drawString(self,x,y,string,center=False,adj=True):
-#        komai
         if self.type=='pdf':
             if center:
                 x+=self.getSpan()*self.scale/2-stringWidth(string,self.font_name,self.font_size)/2
@@ -170,28 +168,33 @@ class openReport:
             xx=x*self.sc
             yy=self.page.slide_height-y*self.sc-self.font_size
             if adj:
-#                komai
 #                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,Cm(1))
                 pw=Cm(0.1)*self.font_size*(len(string)+2)*0.18
                 py=Cm(0.1)*self.font_size*0.5
                 shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,py)
             else:
-                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),Cm(1),Cm(10))
+                pw=self.page.slide_width*0.9
+                sw=self.font_size*(len(string)+2)*0.18/pw+1
+                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,py)
 
             tf=shape.text_frame
+            tf.word_wrap=True
 #            tf.auto_size=MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
             p=tf.paragraphs[0]
             run=p.add_run()
             run.text=string
             run.font.name=self.font_name
             run.font.size=Pt(self.font_size)
-            #komai
 
     def close(self):
         if self.type=='pdf':
             self.page.save()
         else:
             self.page.save(self.file)
+    def isPdf(self):
+        if self.type=='pdf':
+            return True
+        return False
 
 def putLine(x0,y0,x1,y1,shapes):
     if x1>x0:
@@ -214,7 +217,53 @@ def putLine(x0,y0,x1,y1,shapes):
 def picSize():
     return 1.2
 
-def smile2sgv(smiles,name,dr=dr,size=200):
+def cropSvg(fn):
+    if not os.path.isfile(fn):
+        return 
+
+    fno=fn+".tmp";fo=open(fno,"w")
+
+    with open(fn,"r") as fp:
+        for l in fp:
+            fo.write(l)
+            if 'viewBox' in l:
+                w=l.split("width='")[1].split('px')[0]
+                h=l.split("height='")[1].split('px')[0]
+
+    x=[float(w),0]
+    y=[float(h),0]
+    fo.close()
+    with open(fn,"r") as fp:
+        for l in fp:
+            if "d='" in l:
+                f,v=extF(l.split("d=")[1])
+                if f:
+                    px=[]
+                    for p in v:
+                        px.append(float(p))
+                        if len(px)==2:
+                            repv(x,y,px)
+                            px=[]
+    mg=10
+
+    x0=int(x[0]-mg);x1=int(x[1]+mg)
+    y0=int(y[0]-mg);y1=int(y[1]+mg)
+
+    sx=int(x1-x0)
+    sy=int(y1-y0)
+
+    ff=open(fn,"w")
+    with open(fno,"r") as fp:
+        for l in fp:
+            if "<rect " in l:
+                ff.write(l)
+            elif "viewBox" in  l:
+                ff.write(f"width='{sx} px' height='{sy} px' viewBox='{x0} {y0} {sx} {sy}'>\n")
+            else:
+                ff.write(l)
+    ff.close()
+
+def smile2svg(smiles,name,dr=dr,size=200,crop=False):
 #    if os.path.exists(dr):
 #        shutil.rmtree(dr)
     if not os.path.exists(dr):
@@ -246,27 +295,15 @@ def smile2sgv(smiles,name,dr=dr,size=200):
     with open(dr+"/"+name,'w') as f:
         f.write(svg)
 
+    if crop==True:
+        cropSvg(dr+"/"+name)
+
     return fc
 
-def getSmiles(tg,lines):
-    key='Route:'+str(tg)
-    on=False
+#    os.remove(fo)
+
+def setSmiles(tg,cur):
     ret=[]
-    for l in lines:
-        if key in l:
-            on=True
-            continue
-        if on:
-            if 'Route' in l:
-                if len(ret)<1:
-#                    print(l1)
-                    ret.append([l1.split(',')[0]])
-                return ret
-            if not '>' in l:
-                l1=l
-                continue
-            each=l.split(',')
-            ret.append(each[:-1])
     return ret
 
 def Debug(c,head=None,sp=None):
@@ -340,7 +377,6 @@ def setBranchLength(connect,goal,fc):
                 else:
                     wd=fc[-1]['cheat']
                     sp=2
-#   komai
                 # for starting material
                 #
                 connect[n][4]=px=px-(sp+wd)
@@ -495,7 +531,6 @@ def initConnect(smiles,fc=False,mode=1):
     Debug(connect,head='F')
 
     return connect,start
-#        smile2sgv(comp,"e"+str(n+1)+"x"+str(m+1)+".svg")
 
 def makeSgv(smiles,type=0):
     size=100
@@ -506,7 +541,7 @@ def makeSgv(smiles,type=0):
             if ">" in comp:
                 continue
 #            print(comp,"e"+str(n+1)+"x"+str(m+1)+".svg") #debuf
-            fc[m]=smile2sgv(comp,"e"+str(n+1)+"x"+str(m+1)+".svg",size=size)
+            fc[m]=smile2svg(comp,"e"+str(n+1)+"x"+str(m+1)+".svg",size=size)
         fcs.append(fc)
 
     return fcs
@@ -714,7 +749,6 @@ def annealHead(sh,c):
     for p in sh:
         m=len(c)
         keep=c[p[1]][0]
-        #komai 0830
 #        c[p[1]][3]=-2 # right edge out: no connection
         c[p[1]][3]=-2 # right edge out: no connection
         c[p[0]][2]=[-1] # right edge in
@@ -746,6 +780,7 @@ def preDraw(init,proc,branch):
     pos={}
     deep={}
 
+    print("proc",proc)
     for i in proc[init]:
         pos[i]=[ixx,yy]
         s,w=getPropString(branch[i])
@@ -797,7 +832,7 @@ def preDraw(init,proc,branch):
 
     return pos,deep
 
-def similarityOnRoute(init,proc,branch,all):
+def similarityOnRoute(init,proc,branch,allData):
 
     pos,deep=preDraw(init,proc,branch)
     name={}
@@ -813,7 +848,10 @@ def similarityOnRoute(init,proc,branch,all):
         for j in name[i].split(','):
             tg_route=j
             ssMax=0
-            ss=getSmiles(j,all)
+            print(j,"-------->",allData.keys())
+            print(allData[int(j)],"<--------")
+            ss=allData[int(j)]['smiles']
+#            ss=getSmiles(j,all)
             sl=len(ss)
             if sl>ssMax:
                 ssMax,tg_route=sl,j
@@ -853,7 +891,7 @@ def head_page(head,page,hope):
     x0=ox
     py=oy-scale*10.5
 #    print("smiles --->",smiles)
-    smile2sgv(smiles,fn,size=100)
+    smile2svg(smiles,fn,size=100)
     page.drawImage(dr+"/"+fn,x0,py,scale*10)
 
     pt=0;l=len(smiles)
@@ -876,7 +914,6 @@ def head_page(head,page,hope):
     if type(head[2][0])==type(True):
         page.drawString(250,500,head[2][1])
         page.close()
-        exit()
 
     proc=head[-1][0]
     branch=head[-1][1]
@@ -889,7 +926,7 @@ def head_page(head,page,hope):
     sy=50
     sy=35
 
-    page.drawString(ox,oy,"Drawing summary")
+    page.drawString(ox,oy,"Reaction route summary")
 #
 # draw initial one
 #
@@ -900,7 +937,6 @@ def head_page(head,page,hope):
 
     if ox+(ll+8)*(sx)>_magic_x:
         sx=(_magic_x-ox)/(ll+8)
-#komai
     if ll>30:
         page.setFont(font_size=1.5)
     print("length",ll)
@@ -1005,7 +1041,6 @@ def head_page(head,page,hope):
     page.stroke()
     page.setFont(font_size=1)
 
-# komai2
 def getList(s):
     ret=[]
     s=s.split('[')[1].split(']')[0].split(',')
@@ -1025,7 +1060,6 @@ def getAllRoutes(all):
     return ret
 
 def whichIsFirstMaterial(s,mode):
-    #komai
     r=0;maxWeight=0.0
     result=s[-1]
     for i, smiles in enumerate(s):
@@ -1278,6 +1312,17 @@ def branchCheck(s,d):
             return i
     return False
 
+def deepJoin(connect):
+    ret=""
+    for i in connect:
+        if type(i)==list:
+            for p in i:
+                ret+=str(p)+","
+            ret+=":"
+        else:
+            ret+=str(i)+","
+    return ret
+
 def deepArrange(routes):
     n=0
     p=[]
@@ -1323,18 +1368,154 @@ def deepArrange(routes):
         print()
     return [ok,branch]
 
+def strToParent(ss):
+    ret={}
+    n={1:'total',2:'sub'}
+
+    for i in range(1,3):
+        r={}
+        for s in ss[i].split(';')[0:-1]:
+            key=int(s.split(':')[0])
+            values=s.split(':')[1]
+            p=[]
+            for q in values.split(',')[0:-1]:
+                p.append(int(q))
+            r[key]=p
+        ret[n[i]]=r
+    return ret
+
+def strToSmiles(ss):
+    ret=[]
+    for s in ss.split('##')[0:-1]:
+        item=[]
+        for p in s.split(';')[0:-1]:
+            item.append(p)
+        ret.append(item)
+    return ret
+
+def dummyParent(p):
+    print("total",p['total'])
+    for k in p['total'].keys():
+        continue
+    return k
+
+
+def strToList(ii):
+        w=[]
+        for i in ii.split(',')[0:-1]:
+            w.append(int(i))
+        return w
+
+def tupleToString(ss):
+    ret=""
+    for s in ss:
+        if s != list:
+            ret+=str(s)
+        else:
+            ret+='['
+            for i in s:
+                ret+=str(s)+','
+            ret+=']'
+        ret+=','
+    return ret
+
+def tupleToJSON(ss):
+    ret='{"head":'
+    flag=True
+    for s in ss:
+        if flag:
+            ret+=str(s)+',"body":"'
+            flag=False
+        if s != list:
+            ret+=str(s)
+        else:
+            ret+='['
+            for i in s:
+                ret+=str(s)+','
+            ret+=']'
+        ret+=','
+    ret+='"}'
+    return ret
+
+def strToConnect(ss):
+    ret=[]
+    for s in ss.split('##')[0:-1]:
+        item=[]
+        ii=s.split(';')
+        item.append(ii[0])
+        item.append(strToList(ii[1]))
+        item.append(strToList(ii[2]))
+        for n in range(3,7):
+            item.append(int(ii[n]))
+#        item.append('A')
+        item.append(strToList(ii[7]))
+        ret.append(item)
+    return ret
+
+def dump(fall,pid,odir):
+    with open(odir+str(pid)+'db.txt','w') as fp:
+        for xx in fall:
+            fp.write('route '+str(xx[0])+'\n')
+            fp.write(xx[2]+'\n')
+            fp.write(xx[3]+'\n')
+
+def repv(x,y,p):
+    if x[0]>p[0]:
+        x[0]=p[0]
+    if x[1]<p[0]:
+        x[1]=p[0]
+    if y[0]>p[1]:
+        y[0]=p[1]
+    if y[1]<p[1]:
+        y[1]=p[1]
+
+def frac(ss,k):
+    rr=[]
+#    print("a",ss)
+    for s in ss:
+        if k in s:
+            tt=s.split(k)
+            for t in tt:
+                if not t=="":
+                    rr.append(t)
+        else:
+            rr.append(s)
+    return rr
+
+def xsplit(v,s):
+    vv=[]
+    for rx in v:
+        for v in rx.split(s):
+            if v!='':
+                vv.append(v)
+    return vv
+
+def extF(l):
+    if "class='atom" in l:
+        return False,[]
+
+    p1=l.split("'")[1].split("\n")[0]
+
+    v=frac([p1],"M")
+    v=frac(v,"Q")
+    v=frac(v,"L")
+
+    vv=xsplit(v,',')
+    vvv=xsplit(vv,' ')
+    return True,vvv
+
 ##############################################
 #################### main ####################
 ##############################################
 
-chemical="losartan"
 proc_per_line=10 # how many reactions per line roughly ?
 _fc=True
 _tite=False
 _type=3
-_id=False
 _product_only=False 
 _include_subsets=False
+oper="normal"
+forced=False
 
 #print(sys.argv)
 ppt=False;chem=None;_routes=[]
@@ -1343,10 +1524,10 @@ com='-chem chemical_name, -ppt for power point -n [1,2,3] to specify routes -p p
 com+=" -summary 0/1/2"
 ops={'-h':com}
 skip=False
+pid=-1
 for n,op in enumerate(sys.argv):
     if skip:
         skip=False;continue
-#    print(n,op)
     match op:
         case '-h':
             print(sys.argv[0],ops['-h']);exit()
@@ -1365,8 +1546,8 @@ for n,op in enumerate(sys.argv):
             skip=True
         case '-tite':
             _tite=True
-        case '-sub_id':
-            _id=sys.argv[n+1]
+        case '-id':
+            pid=sys.argv[n+1]
             skip=True
         case '-d':
             input_dir=sys.argv[n+1]
@@ -1376,45 +1557,94 @@ for n,op in enumerate(sys.argv):
         case '-p':
             proc_per_line=int(sys.argv[n+1])
             skip=True
-        case '-chem':
-            chemical=sys.argv[n+1]
-            skip=True
+        case '-db_list':
+            oper='db_list'
+        case '-thumbnail':
+            oper='thumbnail'
+        case '-drop':
+            oper='drop'
+        case '-db':
+            oper='db'
+        case '-force':
+            forced=True
 
-input_file=chemical+'.txt'
-if _id:
-    output_file=chemical+str(_id)
-else:
-    output_file=chemical
+with open("readDb.txt","a") as fp:
+    fp.write(f"Anyway......{oper}\n")
+
+db="sList.db"
+conn=sqlite3.connect(db)
+cur=conn.cursor()
+
+if oper=='drop':
+    if int(pid)<0:
+        exit()
+    cur.execute(f"""drop table searchTable{pid}""")
+    cur.execute(f"""delete from searchList where id={pid}""")
+    cur.execute(f"""delete from parent where id={pid}""")
+    conn.commit()
+    conn.close()
+    exit()
+
+#komai
+if oper=='thumbnail':
+    ret=cur.execute(f"""select id,cSmiles from searchList;""")
+
+    for d in ret.fetchall():
+        smile_file=input_dir+"+"+str(d[0])+".svg"
+        if os.path.exists(smile_file):
+            continue
+        smile2svg(d[1],"pid"+str(d[0])+".svg",dr=input_dir,size=200,crop=True)
+    conn.close()
+    exit()
+
+ret=cur.execute(f"""select * from searchList;""")
+descr=cur.description
+
+sout=""
+flag=True
+for d in descr:
+    if not flag:
+        sout+="##"
+        flag=False
+    sout+=d[0]+"##"
+    flag=True
+sout+="#"
+
+for id in ret.fetchall():
+    flag=True
+    for i in id:
+         sout+=str(i)+"##"
+#            print(i,end="##")
+    sout+="#"
+#        print(end="#")
+
+if oper=='db_list':
+    conn.close()
+    print(sout,end="")
+    exit(0)
+
+ret=cur.execute(f"""select substance from searchList where id='{pid}';""")
+ret=ret.fetchall()
+
+if len(ret)<1:
+    conn.close()
+    exit()
+
+chemical=ret[0][0]
 
 if ppt:
-    output_file=output_file+'.pptx'
+    output_file=str(pid)+'.pptx'
 else:
-    output_file=output_file+'.pdf'
+    output_file=str(pid)+'.pdf'
 
 if _web:
-    if not os.path.exists(input_dir+'/report'):
-        os.makedirs(input_dir+'/report')
-    output_file=input_dir+'/report/'+output_file
+    output_file=input_dir+output_file
 
-print(input_file)
-print(output_file)
-#print(_routes)
-print(proc_per_line)
+if os.path.isfile(output_file) and not forced:
+    conn.close()
+    exit()
 
 head=None
-
-print(input_dir+"/"+input_file)
-
-with open(input_dir+"/"+input_file,"r") as f:
-    all=f.readlines()
-
-allRoutes=getAllRoutes(all)
-routeMatrix,ppt=getMatrix(allRoutes,all)
-
-tg="smiles"
-if _product_only:
-    tg="products"
-parent=routeMatrix[tg]
 
 if _include_subsets:
     show='total'
@@ -1422,23 +1652,6 @@ if _include_subsets:
 else:
     show='sub'
     com=" and subsets eliminated."
-
-print("parent",parent['total'])
-routes=list(parent[show].keys())
-
-#easy="All output:"+str(len(allRoutes))+", Net output:"+str(len(parent['total']))+", Prime output:"+str(len(parent['sub']))
-
-print(f"Categolized in respect to {tg}"+com)
-
-for r in parent[show]:
-    print(r,parent[show][r])
-
-print("--->",parent[show][r])
-if len(parent[show][r])<1:
-    hint=[False,"No search results"]
-else:
-    hint=deepArrange(parent[show])
-    hint.append(ppt)
 
 span=proc_per_line*2
 if span<10:
@@ -1449,37 +1662,75 @@ _py=500
 py=_py
 ox=40
 
-if len(_routes)>0:
-    routes=_routes
-
 page=openReport(output_file,scale)
 
+allId={}
+cur=conn.cursor()
+ret=cur.execute(f"""select loop from searchList where id={pid};""").fetchall()
+
+if (len(ret)<1):
+    print(f"not availabale id:{pid}")
+    exit()
+
+maxLoop=ret[0][0]
+print("maxLoop----------------->",maxLoop)
+
+sTable=f"searchTable{pid}"
+sql=f'select * from "{sTable}";'
+ans=cur.execute(sql)
+
+if oper=='db':
+    dump(ans.fetchall(),pid,input_dir)
+    exit()
+
+allData={}
+routes=[]
+for xx in ans.fetchall():
+    s={}
+    routes.append(int(xx[0]))
+    s['connect']=strToConnect(xx[1])
+    s['smiles']=strToSmiles(xx[2])
+    s['info']=strToSmiles(xx[3])
+    allData[xx[0]]=s
+
+ret=cur.execute(f"""select * from parent where id={pid};""")
+parent=strToParent(ret.fetchall()[0])
+ppt=dummyParent(parent)
+
+hint=deepArrange(parent[show])
+hint.append(ppt)
+
 #print(head)
-sim=similarityOnRoute(hint[2],hint[0],hint[1],all) 
-easy=str(len(parent['total']))+" variations from "+str(len(sim))+" routes over "+str(len(allRoutes))+" queries"
+print("hint:",hint[0],"A",hint[1],"B",hint[2],"C")
+
+sim=similarityOnRoute(hint[2],hint[0],hint[1],allData) 
+print("sim",sim)
+easy=str(len(parent['total']))+" variations from "+str(len(sim))+" routes over "+str(maxLoop)+" queries"
+
 hint.append(easy)
+
 if parent!=False:
-    head=[chemical,getSmiles(routes[0],all),hint]
+    head=[chemical,allData[int(routes[0])]['smiles'],hint]
 else:
-    head=[chemical,getSmiles(1,all),hint]
+    head=[chemical,allData[int(routes[0])]['smiles'],hint]
 head_page(head,page,sim)
 
-for route in routes:
-    print(f"Route:{route}",end="..")
-    oy=py-scale
+sTable=f"searchTable{pid}"
+sql=f'select * from "{sTable}";'
+ans=cur.execute(sql)
 
-    smiles=getSmiles(route,all)
+for route in routes:
+    oy=py-scale
+    connect=allData[route]['connect']
+    smiles=allData[route]['smiles']
+    info=allData[route]['info']
 
     fc=makeSgv(smiles)
 
     if not _fc:
         fc=_fc
 
-    connect,start=initConnect(smiles,fc=fc,mode=_type)
-    Debug(connect,head='G',sp=5)
-#
     align(connect,smiles,span-3,fc,_tite)
-    Debug(connect,head='H',sp=5)
     hy=evalHeight(connect,fc)
 
     if fc:
@@ -1499,7 +1750,7 @@ for route in routes:
         if fc:
             wds=fc[i]['s']
         if len(connect[i][2])<1:
-            fn=getName(i,connect[i][6]+1)# need
+            fn=getName(i,connect[i][6]+1) # need
 #            print("starting",i,fn,x0,y0)
             if not fc:
                 page.drawImage(fn,x0,y0,scale) # for starting material
@@ -1511,13 +1762,12 @@ for route in routes:
 #        continue
         if n<0:# for goal
             if not fc:
-                xx= x0+(len(connect[i][7])+2)*scale
+                xx=x0+(len(connect[i][7])+2)*scale
             else:
                 if i<len(fc):
                     sp=len(connect[i][7])+2
                 else:
                     sp=len(connect[i][7])+2
-
 #                    xx=x0+(fc[-1]['cheat']+fc[i][connect[i][6]])*scale
                 xx=x0+(wds+sp)*scale
             yy= y0
@@ -1528,9 +1778,8 @@ for route in routes:
             yy=connect[n][5]*scale*2+oy
 
         if connect[i][1][0]>-1:
-#        if connect[i][3]>-1:
             fn=getName(i,connect[i][1][0]+1)
-#            print("result",i,fn,xx,yy)
+            print("This is the ...",i,connect[i][1][0],fc)
             if not fc:
                 page.drawImage(fn,xx,yy,scale) # for resultant material
                 xp=x0+scale*1.5
@@ -1554,7 +1803,6 @@ for route in routes:
         if n<0 and len(tmp_goal)>0:# for goal
             xx=tmp_goal[0]
             yy=tmp_goal[1]
-## komai
 #
         if not fc:
             page.drawArrow(arrow(x0,y0,xx,yy,scale)) 
@@ -1571,7 +1819,10 @@ for route in routes:
 
     page.drawString(ox,oy+scale*1.5,"Route"+str(route))
 
-#for i in range(10):
-#    page.drawLine([0,i,10,i])
+if page.isPdf():
+    conn.close()
+    page.close()
+    exit()
+
+conn.close()
 page.close()
-print("end")
