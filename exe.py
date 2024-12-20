@@ -80,8 +80,6 @@ time_limit = int(sys.argv[9]) if len(sys.argv) > 9 else 0
 csrf_token = sys.argv[10]
 csv = sys.argv[11]
 substance = sys.argv[12]
-with open("now.txt","w") as fp:
-    fp.write("sys.arvv"+str(len(sys.argv)))
 
 if len(sys.argv)>13:
     uid = sys.argv[13]
