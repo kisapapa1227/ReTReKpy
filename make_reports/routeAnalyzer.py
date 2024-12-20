@@ -293,8 +293,6 @@ def chkJoin(c,s):
         return False
     c[2].sort()
     p1=c[2][-1]
-#    print("in checkJoin",p1,s[p1][0],s[p1][1],"<---")
-#    print(c[2])
     if s[p1][0]=='':
         return False
     return True
@@ -367,7 +365,6 @@ def initConnect(smiles,fc=False,mode=1):
     drop={}
     for n,proc in enumerate(smiles):
         e=False
-#        print("proc")
         for m, comp in enumerate(proc):
             if ">" in comp:
                 e=True
@@ -383,7 +380,6 @@ def initConnect(smiles,fc=False,mode=1):
     for n, prev in enumerate(smiles):
         for m, proc in enumerate(smiles):
             if n !=m and connect[n][0] in proc:
-#                print("n",n,m)
                 connect[n][3]=m
                 connect[m][2].append(n)
 #
@@ -442,7 +438,6 @@ def initConnect(smiles,fc=False,mode=1):
                 m=connect[n][2][0]
                 if len(connect[n][2])>1:
                     branch=branch+connect[n][2][1:]
-#        print(n,"->",m)
             n=m
 #
 # up to here: define tree structure
@@ -465,10 +460,8 @@ def initConnect(smiles,fc=False,mode=1):
 #            p.append(0)# will be modified
             pp=addCatal(s,p)
             c[7]+=pp
-#            print("upper",n)
         else:#
             d=[]
-#            print("lower",n)
             for f in c[2]:#
                 d.append(connect[f][0])
             if n in list(drop.keys()):
@@ -505,7 +498,6 @@ def makeSgv(smiles,type=0):
         for m,comp in enumerate(proc):
             if ">" in comp:
                 continue
-#            print(comp,"e"+str(n+1)+"x"+str(m+1)+".svg") #debuf
             fc[m]=smile2sgv(comp,"e"+str(n+1)+"x"+str(m+1)+".svg",size=size)
         fcs.append(fc)
 
@@ -670,6 +662,10 @@ def align(c,smiles,s,fc,tite):
         for n,vv in enumerate(fc):
             for v in vv.values():
                 i=-c[n][5]
+                # ugly
+                if i<0 or i>5:
+                    i=5
+                    c[n][5]=-i
                 while i>=len(deep):
 #                if i>=len(deep):
                     deep.append(0)
@@ -680,10 +676,13 @@ def align(c,smiles,s,fc,tite):
             dx.append((deep[n]+deep[n+1])/span+dx[n])
 
         for i in c:
-            if -i[5]<len(dx):
-                i[5]=-int(dx[-i[5]])
-            else:
-                i[5]=i[4]
+            try:
+                if -i[5]<len(dx):
+                    i[5]=-int(dx[-i[5]])
+                else:
+                    i[5]=i[4]
+            except:
+                    i[5]=i[4]
         
 def prevEvalHeight(connect):
     depth=0
@@ -835,7 +834,7 @@ def similarityOnRoute(init,proc,branch,all):
                 if sm>ss:
                     sm=ss
             sim.append([tg_route,sm])
-    print("sim",sim)
+#    print("sim",sim)
     return sim
 
 def head_page(head,page,hope):
@@ -903,7 +902,7 @@ def head_page(head,page,hope):
 #komai
     if ll>30:
         page.setFont(font_size=1.5)
-    print("length",ll)
+#    print("length",ll)
 
     page.drawString(ox+(2)*sx,oy-(1)*sy,"reactions")
 
@@ -969,7 +968,7 @@ def head_page(head,page,hope):
 
     bt=0
     for j in name:
-        print(j,name[j])
+#        print(j,name[j])
         if bt<j:
             bt=j
         if len(name[j])>20:
@@ -1103,7 +1102,7 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
             l=len(ss)
             pt=r
 
-    print("len",len(_smiles),l,pt)
+#    print("len",len(_smiles),l,pt)
     if l<1:
         return False
 
@@ -1136,9 +1135,9 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
             m.insert(0,n)
         sAll[r]=m
         
-    print("type",typ)
-    print("the trick",pt,sAll[pt])
-    print(sAll)
+#    print("type",typ)
+#    print("the trick",pt,sAll[pt])
+#    print(sAll)
 
     ppt=pt
     for r in rt:
@@ -1184,7 +1183,7 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
     if typ=="smiles":
         return ret,ppt
 
-    print("this is submatch",sSubMatch)
+#    print("this is submatch",sSubMatch)
     
     return ret,ppt
 
@@ -1300,7 +1299,7 @@ def deepArrange(routes):
             p.append(n)
         n-=1
     branch.append(p)
-    print(branch)
+#    print(branch)
 
     ok={}
     for r in routes:
@@ -1316,11 +1315,11 @@ def deepArrange(routes):
                 pp=[]
         ok[r]=rr
 
-    for i in ok:
-        print("Route",i,end=":")
-        for j in ok[i]:
-            print(branch[j],end="->")
-        print()
+#    for i in ok:
+#        print("Route",i,end=":")
+#        for j in ok[i]:
+#            print(branch[j],end="->")
+#        print()
     return [ok,branch]
 
 ##############################################
@@ -1334,7 +1333,7 @@ _tite=False
 _type=3
 _id=False
 _product_only=False 
-_include_subsets=False
+_include_subsets=True
 
 #print(sys.argv)
 ppt=False;chem=None;_routes=[]

@@ -1,4 +1,4 @@
-import sys,os
+import sys,os,time
 import math
 import subprocess
 from rdkit import Chem
@@ -25,13 +25,13 @@ import Levenshtein
 import sqlite3
 
 max_route=7
-debug=True
 debug=False
+debug=True
 
 version="1.3 12062024"
 
-_web=True
 _web=False
+_web=True
 
 if _web:
     dr='/var/www/html/public/images/tmp/' # working directory
@@ -1316,6 +1316,7 @@ _include_subsets=False
 oper="normal"
 forced=False
 
+start=time.time()
 ppt=False;chem=None;_routes=[]
 input_dir="./"
 com='-chem chemical_name, -ppt for power point -n [1,2,3] to specify routes -p proc_per_line -d input_path, -one_size : rendering at the same size, -product_only : categolize routes with respct to reaction product only, -show_subsets : show routes including subsets'
@@ -1323,7 +1324,15 @@ com+=" -summary 0/1/2"
 ops={'-h':com}
 skip=False
 pid=-1
+
+debug_log="/var/www/html/public/images/report/readDb_web.log";
+
+scale=0.15
+scale=0.4
+scale=0.2
+fp=open("readDb.log","w")
 for n,op in enumerate(sys.argv):
+    fp.write(f" {op}")
     if skip:
         skip=False;continue
     match op:
@@ -1343,19 +1352,27 @@ for n,op in enumerate(sys.argv):
             _include_subsets=True
         case '-n':
             _routes=getList(sys.argv[n+1])
+            fp.write(f" {_routes}")
             skip=True
         case '-tite':
             _tite=True
+        case '-s':
+            scale=float(sys.argv[n+1])
+            fp.write(f" {scale}")
+            skip=True
         case '-id':
             pid=sys.argv[n+1]
+            fp.write(f" {pid}")
             skip=True
         case '-d':
             input_dir=sys.argv[n+1]
+            fp.write(f" {input_dir}")
             skip=True
         case '-product_only':
             _product_only=False
         case '-p':
             proc_per_line=int(sys.argv[n+1])
+            fp.write(f" {proc_per_line}")
             skip=True
         case '-db_list':
             oper='db_list'
@@ -1368,11 +1385,17 @@ for n,op in enumerate(sys.argv):
         case '-force':
             forced=True
 
+    fp.write("\n")
+fp.close()
 db="sList.db"
 conn=sqlite3.connect(db)
 cur=conn.cursor()
 
-print("options:",pid,oper)
+#print("options:",pid,oper)
+
+if _web and debug:
+    with open(debug_log,"w") as fp:
+        fp.write(f"{oper}\n")
 
 if oper=='drop':
     if int(pid)<0:
@@ -1415,6 +1438,10 @@ for id in ret.fetchall():
          sout+=str(i)+"##"
     sout+="#"
 
+if _web and debug:
+    with open(debug_log,"a") as fp:
+        fp.write(f"a{oper}\n")
+
 if oper=='db_list':
     conn.close()
     print(sout,end="")
@@ -1437,7 +1464,12 @@ if ppt:
 else:
     output_file=str(pid)+'.pdf'
 
+log_name="readDb"+str(pid)+oper+".log"
+
 if _web:
+    if os.path.isdir(input_dir):
+        os.makedirs(input_dir,exist_ok=True)
+    log_name=input_dir+"/readDb"+str(pid)+"normal.log"
     output_file=input_dir+output_file
 
 print(output_file)
@@ -1457,18 +1489,16 @@ else:
 span=proc_per_line*2
 if span<10:
     span=10
-scale=_magic_x/(span)
 
 _py=500
 py=_py
 ox=40
 
 print("output_file--------------------------->",output_file)
-scale=0.15
-scale=0.4
-scale=0.2
 if scale>0.5:
     scale=0.5
+if scale<0.05:
+    scale=0.05
 
 page=openReport(output_file,scale)
 
@@ -1489,6 +1519,8 @@ ans=cur.execute(sql)
 
 if oper=='db':
     dump(ans.fetchall(),pid,input_dir)
+    with open(log_name,"a") as fp:
+        fp.write(f"mission ok\n")
     exit()
 
 allData={}
@@ -1512,7 +1544,8 @@ hint.append(ppt)
 
 sim=similarityOnRoute(page,hint[2],hint[0],hint[1],allData) 
 print(sim,"sim")
-easy=str(len(parent['total']))+" variations from "+str(len(sim))+" routes over "+str(maxLoop)+" queries"
+#easy=str(len(parent['total']))+" variations from "+str(len(sim))+" routes over "+str(maxLoop)+" queries"
+easy=str(len(sim))+" routes over "+str(maxLoop)+" queries"
 
 hint.append(easy)
 
@@ -1522,6 +1555,9 @@ else:
     head=[chemical,allData[int(routes[0])]['smiles'],hint]
 head_page(head,page,sim)
 
+with open(log_name,"w") as fp:
+    fp.write("head_page done\n")
+
 sTable=f"searchTable{pid}"
 sql=f'select * from "{sTable}";'
 ans=cur.execute(sql)
@@ -1529,6 +1565,9 @@ ans=cur.execute(sql)
 #oy=py-page.mg*5
 oy=page.height
 for route in routes:
+    now=str(int(time.time()-start))+" sec"
+    with open(log_name,"a") as fp:
+        fp.write(f"{now}:route {route} start\n")
     connect=allData[route]['connect']
     smiles=allData[route]['smiles']
     info=allData[route]['info']
@@ -1573,9 +1612,14 @@ for route in routes:
     print("obj",obj)
     print("---------->  Route"+str(route))
     oy-=(hy*page.scale+page.mg)
+    now=str(int(time.time()-start))+" sec"
+    with open(log_name,"a") as fp:
+        fp.write(f"{now}:route {route} done\n")
     if route>max_route and debug==True:
         break
 
+with open(log_name,"a") as fp:
+    fp.write(f"mission ok\n")
 if page.isPdf():
     conn.close()
     page.close()
