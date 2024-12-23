@@ -1393,6 +1393,10 @@ cur=conn.cursor()
 
 #print("options:",pid,oper)
 
+if _web:
+    tmp_dir="/".join(debug_log.split("/")[:-1])
+    os.makedirs(tmp_dir,exist_ok=True)
+
 if _web and debug:
     with open(debug_log,"w") as fp:
         fp.write(f"{oper}\n")
