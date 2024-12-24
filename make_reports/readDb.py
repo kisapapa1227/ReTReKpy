@@ -25,8 +25,8 @@ import Levenshtein
 import sqlite3
 
 max_route=7
-debug=False
 debug=True
+debug=False
 
 version="1.3 12062024"
 
