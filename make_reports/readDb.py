@@ -1610,7 +1610,7 @@ for route in routes:
                     page.drawImage(dr+"/"+fn,xx,y0+page.mg)
                     xx+=r[0]
                 page.drawArrow(arrow(x0,y0,x1,y1,page.scale))
-## komai111
+
     page.drawStringR(ox,(oy-page.font_size)/page.scale,"Route"+str(route))
 #    page.drawLine([0,oyy,ox,oyy])
     print("obj",obj)
@@ -1621,13 +1621,8 @@ for route in routes:
         fp.write(f"{now}:route {route} done\n")
     if route>max_route and debug==True:
         break
-
-with open(log_name,"a") as fp:
-    fp.write(f"mission ok\n")
-if page.isPdf():
-    conn.close()
-    page.close()
-    exit()
-
+        
 conn.close()
 page.close()
+with open(log_name,"a") as fp:
+    fp.write(f"mission ok\n")
