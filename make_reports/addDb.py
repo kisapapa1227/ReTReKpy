@@ -167,7 +167,6 @@ class openReport:
             drawString(self,x,y,string,center=center,adj=adj)
         else:
             shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,py)
-            # komai
 
     def drawString(self,x,y,string,center=False,adj=True):
         if self.type=='pdf':
@@ -178,7 +177,6 @@ class openReport:
             xx=x*self.sc
             yy=self.page.slide_height-y*self.sc-self.font_size
             if adj:
-#                komai
 #                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,Cm(1))
                 pw=Cm(0.1)*self.font_size*(len(string)+2)*0.18
                 py=Cm(0.1)*self.font_size*0.5
@@ -419,6 +417,9 @@ def initConnect(smiles,fc=False,mode=1):
     Debug(connect,head='B')
     goal=[]
     l=len(smiles)
+    #komai
+    if len(connect)<1:# case of no route: V2.2
+        return [],0
     for i in range(l):
         if connect[i][3]==-1:
             goal.append(i)
@@ -1091,6 +1092,9 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
             for ss in reversed(_smiles[r]):
                 n,f=isInRef(ss[-1],ref)
                 m.insert(0,n)
+            if len(_smiles[r])<1:
+                sAll[r]=[]
+                continue
 
             s=_smiles[r][0][0]
             n,f=isInRef(s,ref)
@@ -1318,12 +1322,19 @@ user='kisa'
 com='-u user -d input_dir -s script.sh'
 ops={'-h':com}
 skip=False
+_product_only=True
+_product_only=False
+_include_subsets=False
+_include_subsets=True
 
 for n,op in enumerate(sys.argv):
     if skip:
         skip=False;continue
 #    print(n,op)
     match op:
+        case '-database':
+            db=sys.argv[n+1]
+            skip=True
         case '-d':
             input_dir=sys.argv[n+1]
             skip=True
@@ -1372,11 +1383,18 @@ allRoutes=getAllRoutes(all)
 routeMatrix,ppt=getMatrix(allRoutes,all)
 
 tg="smiles"
-parent=routeMatrix["smiles"]
+if _product_only:
+    tg="products"
+parent=routeMatrix[tg]
 
-routes=list(parent['sub'].keys())
+if _include_subsets:
+    show="total"
+else:
+    show="sub"
+routes=list(parent[show].keys()) # v2.4 07152025
 
-#print("parent",parent,"<---------")
+print("parent",parent,"<---------")
+print("routes",routes)
 
 conn=sqlite3.connect(db)
 cur=conn.cursor()
@@ -1384,7 +1402,6 @@ cur=conn.cursor()
 cur.execute('create table if not exists searchList(id integer primary key, user text, uname text, email text, smiles text, cSmiles text, date text, substance text, loop integer, factors text, options text);')
 cur.execute('create table if not exists parent(id integer, total text, sub text);')
 conn.commit()
-
 
 #smiles=getSmiles(routes[0],all)[-1][-1]
 mol=Chem.MolFromSmiles(smi)
@@ -1410,27 +1427,20 @@ print(sql)
 cur.execute(sql)
 conn.commit()
 
-print("----------------------->")
-
 sTable=f"searchTable{id}"
 
 cur.execute(f'create table if not exists "{sTable}" (route int, connect_list text, smiles_list text, info_list text);')
 conn.commit()
 
 #komai
-#print(routes)
 for route in routes:
     info=getInfo(route,all_info)
     smiles=getSmiles(route,all)
     connect,start=initConnect(smiles)
     s1=listToString(connect)
     s2=listToString(smiles)
-#    print("---->",route)
-#    print("connect",connect)
-#    print("connect(s1)",s1)
-#    print(smiles)
-#    print("smiles(s2)",s2)
-#    print(info)
+#    print("Route"+str(route)+";+connect",len(connect),connect)
+#    print("Route"+str(route)+";+smiles",len(smiles),smiles)
     s3=listToString(info)
     sql=f'insert into {sTable} values({route},"{s1}","{s2}","{s3}");'
 #    print("sql",sql)

@@ -28,7 +28,7 @@ max_route=7
 debug=True
 debug=False
 
-version="1.3 12062024"
+version="1.4 07172025"
 
 _web=False
 _web=True
@@ -83,7 +83,7 @@ class openReport:
                 self.font_name=font_name
             if font_size:
                 self.font_size=int(self._font_size*font_size)
-                print("in setFont",self.font_size)
+#                print("in setFont",self.font_size)
             self.page.setFont(self.font_name,self.font_size)
         else:
             if font_size:
@@ -492,7 +492,6 @@ def _ccn(i):
         return 2
     return 3
 
-# komai..
 def getPropString(page,m):
     if len(m)<2:
         s=str(m[0])
@@ -590,8 +589,12 @@ def similarityOnRoute(page,init,proc,branch,allData):
             fps=FingerprintMols.FingerprintMol(Chem.MolFromSmiles(ss[-1][-1]))
 
         tg=whichIsFirstMaterial(ss[0],_type)
-        fpp=FingerprintMols.FingerprintMol(Chem.MolFromSmiles(ss[0][tg]))
-        sm=DataStructs.FingerprintSimilarity(fps,fpp)
+        try:
+            fpp=FingerprintMols.FingerprintMol(Chem.MolFromSmiles(ss[0][tg]))
+            sm=DataStructs.FingerprintSimilarity(fps,fpp)
+        except:
+            fpp=[]
+            sm=1.0
 #            sim.append([tg_route,sm])
 #    return sim easy way
 # question....
@@ -616,7 +619,6 @@ def head_page(head,page,hope):
 
     nx,ny,_=easyTrans(page,0,0)
     ll=len(head[0])
-
     page.setFont(font_size=mag)
     if ll>7:
         page.setFont(font_size=mag*7.0/float(ll))
@@ -626,6 +628,7 @@ def head_page(head,page,hope):
 
     scale=page.scale
 #
+# head
     smiles=head[1][-1][-1]
     fn="head.svg"
     x0=ox
@@ -633,6 +636,7 @@ def head_page(head,page,hope):
     scale=page.scale
     page.scale=1.0
     page.drawImage(dr+"/"+fn,x0,page.top)
+
     page.scale=scale
 
     pt=0;l=len(smiles)
@@ -651,10 +655,18 @@ def head_page(head,page,hope):
         pt+=wd
         py+=page.font_size
 
+    if type(head[2])==type(True):# no route
+        page.setFont(font_size=6)
+        nx,ny,_=easyTrans(page,page.width/2,-page.height/3)
+        page.drawStringR(nx,ny,"Route Not Found.",center=True)
+        return
+
     if type(head[2][0])==type(True):
         nx,ny,_=easyTrans(page,page.width/2,-page.height/2)
         page.drawStringR(nx,ny,head[2][1])
         page.close()
+        with open(log_name,"a") as fp:
+            fp.write(f"mission ok\n")
         exit()
 
     proc=head[-1][0]
@@ -738,10 +750,6 @@ def head_page(head,page,hope):
     page.scale=1
 #    print("fontsize",page.font_size);
 
-#    x_skip=y_skip=1.0
-#    print("pos",pos)
-#    print("bos",branch)
-#    print("proc",proc)
     for i in pos:
         ix=pos[i][0]
         iy=pos[i][1]
@@ -1021,7 +1029,7 @@ def extF(l):
         return False, False
     return True,vvv
 
-def getSubObj(page,n,c,fsize,onset=False):
+def getSubObj(page,n,c,fsize,xx,onset=False):
 
     ret={}
     if onset:
@@ -1034,17 +1042,9 @@ def getSubObj(page,n,c,fsize,onset=False):
     else:
         r=[page.mg,page.mg]
 
-    ret['type']=1;
-#    py=page.height-page.mg*5
-    py=page.height
-#komai...Need..
-#    pos=[];pos.append([0,(py-r[1]/2.0-page.font_size*3)/page.scale])
-    wy=-r[1]/2.0
-    pos=[];pos.append([0,wy])
-    ret['pos']=pos
-    ret['svg']=[fn];ret['size']=r
-#    komai...
-    return ret
+    xx-=page.mg+r[0]
+    ret['type']=1;ret['pos']=[[xx,-r[1]/2.0]];ret['svg']=[fn];ret['size']=r
+    return ret,xx
 
 def calcBranch(obj,tag):
     base=0
@@ -1059,7 +1059,7 @@ def calcBranch(obj,tag):
                 base=ty
     return x,base
 
-def getCatObj(page,n,c,fsize):
+def getCatObj(page,n,c,fsize,xx):
     l=0
     fns=[]
     height=0
@@ -1078,8 +1078,9 @@ def getCatObj(page,n,c,fsize):
     if len(c[n][-1])<1:
         l+=page.mg*5
 #Need..
-    ret['type']=2;ret['pos']=[[0,0],[l,0]];ret['svg']=fns;ret['size']=[l,height]
-    return ret
+    xx-=page.mg
+    ret['type']=2;ret['pos']=[[xx-l,0],[xx,0]];ret['svg']=fns;ret['size']=[l,height]
+    return ret,xx-l
 
 def setItem(a,b,c,d):
     ret={}
@@ -1117,7 +1118,6 @@ def shiftForBranch(objs):
                 item['pos'][1][1]-=shift
 
 def lineBraker(objs):
-    #komai
     for j in range(len(objs[0])-1,-1,-1):
         item=objs[0][j]
         xx=item['pos'][0][0]+item['size'][0]
@@ -1147,7 +1147,6 @@ def cutIt(objs,ok):
                     ty=yy
 
     shift=ty-by+page.mg
-#    print("shift:",shift,ty,by,page.mg)
     for obj in objs:
         for item in obj:
             xx=item['pos'][0][0]+item['size'][0]
@@ -1173,6 +1172,14 @@ def easyGetBottom(objs):
                     top=yy
     return top-hy,top,hy
 
+def stackGoal(connect,n,line,tag):
+
+    ret=[connect[n][2][1],line,tag]
+    if len(connect[n][7])>0:
+        ret[2]+=1
+
+    return ret
+
 def makeObject(page,connect,fsize):
 
     line=0
@@ -1180,6 +1187,7 @@ def makeObject(page,connect,fsize):
 #
 # find goal
 #
+    n=0
     for i in range(len(connect)):
         if connect[i][3]<0:
             goal=n=i
@@ -1191,41 +1199,24 @@ def makeObject(page,connect,fsize):
 #    fn=getName(n,connect[n][6]+1,dr='') # goal
     hint.append([]) # to which the line connect (line,tag)
 
-    l=len(connect[n][2])
+    try:
+        l=len(connect[n][2])
+    except:
+        l=0
 
     if l>1:
-        tmp_goal.append([connect[n][2][1],line,tag])
+        tmp_goal.append(stackGoal(connect,n,line,tag))
 
     while n>-1:
-# substance object
-        xx-=page.mg
-        item=getSubObj(page,n,connect,fsize)
-        # set postion
-        xx-=item['size'][0]
-        item['pos'][0][0]=xx
-        obj.append(item);tag+=1
-
-# catalysis object
+        item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
         l=len(connect[n][2])
         if l>1:
-            tmp_goal.append([connect[n][2][1],line,tag])
+            tmp_goal.append(stackGoal(connect,n,line,tag))
 
-        xx-=page.mg
-#        xx-=page.mg
-        item=getCatObj(page,n,connect,fsize)
-        # set postion
-        item['pos'][1][0]=xx
-        xx-=item['size'][0]
-        item['pos'][0][0]=xx
-        obj.append(item);tag+=1
+        item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
 
         if l<1:
-            xx-=page.mg
-            item=getSubObj(page,n,connect,fsize,onset=True)
-            # set postion
-            xx-=item['size'][0]
-            item['pos'][0][0]=xx
-            obj.append(item);tag+=1
+            item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
             objs.append(obj);line+=1
             break
         n=connect[n][2][0]
@@ -1235,25 +1226,23 @@ def makeObject(page,connect,fsize):
         n=r[0];obj=[];tag=0
 #        hint.append([r[1],r[2]]) # to which the line connect (line,tag)
 
-        item=objs[r[1]][r[2]-1] # connecting position
+        item=objs[r[1]][r[2]] # connecting position
 #        x0=item['pos'][0][0]-page.mg
         x0=item['pos'][0][0]-page.mg
         y0=item['pos'][0][1]+item['size'][1]/2
-#        y0=item['pos'][0][1]+item['size'][1]/2
-        item=objs[r[1]][r[2]]
+#        item=objs[r[1]][r[2]+2]
         ln=item['size'][0]
         xx=x0-ln
         item=setItem(2,[[xx,0],[x0,y0]],[],[ln,0]);
         obj.append(item);tag+=1
 
         n=connect[n][2][0]
-        xx-=page.mg
-        item=getSubObj(page,n,connect,fsize)
-        xx-=item['size'][0]
-        item['pos'][0][0]=xx
-        obj.append(item);tag+=1
+        item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
+        item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
 
         if len(connect[n][2])<1:
+            item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
+            objs.append(obj)
             n=-1
         else:
             n=connect[n][2][0]
@@ -1262,22 +1251,10 @@ def makeObject(page,connect,fsize):
 # catalysis object
             l=len(connect[n][2])
             if l>1:
-                tmp_goal.append([connect[n][2][1],line,tag])
+                tmp_goal.append(stackGoal(connect,n,line,tag))
 
-            xx-=page.mg
-
-            item=getCatObj(page,n,connect,fsize)
-            # set postion
-            item['pos'][1][0]=xx
-            xx-=item['size'][0]
-            item['pos'][0][0]=xx
-            obj.append(item);tag+=1
-# substance object
-            xx-=page.mg
-            item=getSubObj(page,n,connect,fsize)
-            xx-=item['size'][0]
-            item['pos'][0][0]=xx
-            obj.append(item);tag+=1
+            item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
+            item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
 # up to now
             if l<1:
                 objs.append(obj);line+=1
@@ -1295,10 +1272,9 @@ def makeObject(page,connect,fsize):
             for i in range(len(item['pos'])):
                 item['pos'][i][0]-=xx
 
-    if len(objs)>1:
+    if len(objs)>0:
         shiftForBranch(objs)
-
-    lineBraker(objs)
+        lineBraker(objs)
 
     return objs
 
@@ -1330,7 +1306,9 @@ debug_log="/var/www/html/public/images/report/readDb_web.log";
 scale=0.15
 scale=0.4
 scale=0.2
+db="sList.db"
 fp=open("readDb.log","w")
+noRoute=False
 for n,op in enumerate(sys.argv):
     fp.write(f" {op}")
     if skip:
@@ -1364,6 +1342,9 @@ for n,op in enumerate(sys.argv):
             pid=sys.argv[n+1]
             fp.write(f" {pid}")
             skip=True
+        case '-database':
+            db=sys.argv[n+1]
+            skip=True
         case '-d':
             input_dir=sys.argv[n+1]
             fp.write(f" {input_dir}")
@@ -1387,7 +1368,6 @@ for n,op in enumerate(sys.argv):
 
     fp.write("\n")
 fp.close()
-db="sList.db"
 conn=sqlite3.connect(db)
 cur=conn.cursor()
 
@@ -1402,16 +1382,16 @@ if _web and debug:
         fp.write(f"{oper}\n")
 
 if oper=='drop':
-    if int(pid)<0:
-        exit()
-    cur.execute(f"""drop table searchTable{pid}""")
-    cur.execute(f"""delete from searchList where id={pid}""")
-    cur.execute(f"""delete from parent where id={pid}""")
+    for p in pid.split(','):
+        if int(p)<0:
+            continue;
+        cur.execute(f"""drop table searchTable{p}""")
+        cur.execute(f"""delete from searchList where id={p}""")
+        cur.execute(f"""delete from parent where id={p}""")
     conn.commit()
     conn.close()
     exit()
 
-#komai
 if oper=='thumbnail':
     ret=cur.execute(f"""select id,cSmiles from searchList;""")
 
@@ -1462,6 +1442,7 @@ if len(ret)<1:
     exit()
 
 chemical=ret[0][0]
+print("here 1 ret..",ret)
 
 if ppt:
     output_file=str(pid)+'.pptx'
@@ -1510,7 +1491,6 @@ allId={}
 cur=conn.cursor()
 ret=cur.execute(f"""select loop from searchList where id={pid};""").fetchall()
 
-print("ret..",ret)
 if (len(ret)<1):
     print(f"not availabale id:{pid}")
     exit()
@@ -1518,45 +1498,67 @@ if (len(ret)<1):
 maxLoop=ret[0][0]
 
 sTable=f"searchTable{pid}"
+#sql='select count(*) from sqlite_master where type="table" and name=?'
+#ans=cur.execute(sql,(sTable,))
+
 sql=f'select * from "{sTable}";'
-ans=cur.execute(sql)
+ans=cur.execute(sql).fetchall()
+
+if len(ans[0][1].split(";"))<2:
+    noRoute=True
+    head=[chemical,[[ans[0][2].split(";")[0]]],noRoute]
 
 if oper=='db':
-    dump(ans.fetchall(),pid,input_dir)
+    dump(ans,pid,input_dir)
     with open(log_name,"a") as fp:
         fp.write(f"mission ok\n")
     exit()
 
 allData={}
 routes=[]
-for xx in ans.fetchall():
+#if len(ans)==1 and ans[0][2]=='':
+#    print(ans[0][0],chemical)
+#    head=[chemical,[[,],]]
+
+for xx in ans:
     s={}
+    if xx[1]=="":
+        continue
     routes.append(int(xx[0]))
     s['connect']=strToConnect(xx[1])
     s['smiles']=strToSmiles(xx[2])
     s['info']=strToSmiles(xx[3])
-    allData[xx[0]]=s
+    allData[int(xx[0])]=s
 
 ret=cur.execute(f"""select * from parent where id={pid};""")
-parent=strToParent(ret.fetchall()[0])
+ans=ret.fetchall()
+sim=[]
+if noRoute:
+    head_page(head,page,sim)
+    with open(log_name,"a") as fp:
+        fp.write(f"mission ok\n")
+    page.close()
+    exit()
+
+parent=strToParent(ans[0])
 ppt=dummyParent(parent)
 
 hint=deepArrange(parent[show])
 hint.append(ppt)
+    #print("hint",hint[0],hint[1],hint[2])
+sim=similarityOnRoute(page,hint[2],hint[0],hint[1],allData) 
 
 #print(head)
 
-sim=similarityOnRoute(page,hint[2],hint[0],hint[1],allData) 
-print(sim,"sim")
 #easy=str(len(parent['total']))+" variations from "+str(len(sim))+" routes over "+str(maxLoop)+" queries"
 easy=str(len(sim))+" routes over "+str(maxLoop)+" queries"
-
 hint.append(easy)
 
 if parent!=False:
     head=[chemical,allData[int(routes[0])]['smiles'],hint]
 else:
     head=[chemical,allData[int(routes[0])]['smiles'],hint]
+
 head_page(head,page,sim)
 
 with open(log_name,"w") as fp:
@@ -1575,7 +1577,6 @@ for route in routes:
     connect=allData[route]['connect']
     smiles=allData[route]['smiles']
     info=allData[route]['info']
-
     fc,image_size=makeSgv(smiles)
 
     if not _fc:
@@ -1613,7 +1614,6 @@ for route in routes:
 
     page.drawStringR(ox,(oy-page.font_size)/page.scale,"Route"+str(route))
 #    page.drawLine([0,oyy,ox,oyy])
-    print("obj",obj)
     print("---------->  Route"+str(route))
     oy-=(hy*page.scale+page.mg)
     now=str(int(time.time()-start))+" sec"
