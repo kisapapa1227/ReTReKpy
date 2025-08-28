@@ -525,7 +525,7 @@ def initConnect(smiles,fc=False,mode=1):
     return connect,start
 #        smile2sgv(comp,"e"+str(n+1)+"x"+str(m+1)+".svg")
 
-def makeSgv(smiles,type=0):
+def makeSvg(smiles,type=0):
     size=100
     fcs=[]
     for n,proc in enumerate(smiles):
@@ -1069,11 +1069,15 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
     if l<1:
         return False
 
+    print("len",_smiles)
     for ss in reversed(_smiles[pt]):
         if typ=="smiles":
+            print("1")
             ref.append(ss)
         else:
+            print("2",ss)
             ref.append(ss[-1])
+        print("------------------------------ref\n",ss)
 
     if typ!="smiles":
         ss=_smiles[pt][0][0]

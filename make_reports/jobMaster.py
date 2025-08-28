@@ -148,6 +148,8 @@ def addDb(uid,ssh,db_type,name):
     logs("src:"+src)
     logs("dst:"+dst)
     comp=subprocess.run(['mv',src,dst],capture_output=True,text=True)
+    for i in comp.stdout.split("\n"):
+        logs(i)
 
 def updateSlave(uid,r,where,cur,fin):
     now=time.time()
