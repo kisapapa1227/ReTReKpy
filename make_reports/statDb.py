@@ -140,7 +140,47 @@ def getOpeningMaterial(smiles):
         coreSmiles=Chem.MolToSmiles(core)
     return s, mol
 
+def getLevel(s,sims):
+    flag=False;lv=0
+    for p in sims:
+        if flag:
+            if s==p:
+                return lv
+            if p=='(':
+                lv=lv+1
+            elif p==')':
+                lv=lv-1
+        if s==p:
+            if ss=="[":
+                continue
+            flag=True
+        ss=p
+    return 0
+
 def findRing(sims):
+    flag=True;r="";lv=0
+    for s in sims:
+        if s.isdigit():
+            if flag:# starting point
+                if ss=="[":
+                    continue
+                p=s;flag=False;l=getLevel(s,sims);r=ss+s;continue
+            if s==p:# end point
+                print("-->",l,r);
+                r=r+s;return r
+        if not flag:
+            if s=="(":
+                lv=lv+1;continue
+            elif s==")":
+                lv=lv-1;continue
+            print(lv,l,s,lv<=l)
+            if lv <= l and not s.isdigit():
+                print("hit ",s)
+                r=r+s
+        ss=s
+    return r
+
+def prevFindRing(sims):
     r="";flag=True;level=0;p=1
     for s in sims:
         if s==")" or s=="]":
@@ -156,7 +196,7 @@ def findRing(sims):
                 if s==p:
                     r=r+s;return r
                 else:
-                    print("unacceptable")
+                    print("unacceptable",sims)
                     r=r+s
         else:
             if not flag:
@@ -183,7 +223,7 @@ def getBinder(sims):
 
     while numRing(tmp)>0:
         r=findRing(tmp)
-#        print("find",cnt,r,tmp);cnt+=1
+        print("find",cnt,r,tmp);cnt+=1
         p=Chem.MolFromSmiles(tmp)
         x=Chem.MolFromSmiles(r)
 #        tmp=Chem.MolToSmiles(Chem.ReplaceCore(p,x,labelByIndex=True))

@@ -1361,11 +1361,13 @@ def mySort(src):
                 lm=mm
 
     index=[]
-    for i in range(mm+1):
+    for i in range(lm+1):
         index.append(-1)
 
     n=0
+    print(mm)
     for ds in dst:
+        print("ds",ds)
         for d in reversed(ds[0]):
             if index[d]==-1:
                 index[d]=n;n+=1
