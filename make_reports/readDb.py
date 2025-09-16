@@ -76,7 +76,22 @@ def getAllData(ans,_routes):
 
     return allData,routes,newInfo,index
 
-#max_route=7
+def getPids(cur):
+    ret=cur.execute(f"""select id from searchList;""")
+    ret=ret.fetchall()
+    rs=""
+    for r in ret:
+        if rs=="":
+            rs=str(r[0])
+        else:
+            rs=rs+","+str(r[0])
+    return rs
+
+def addLog(mes):
+    with open(debug_log,"a") as fp:
+        fp.write(mes+"\n")
+
+max_route=7
 debug=True
 debug=False
 
@@ -94,6 +109,7 @@ else:
 #################### main ####################
 ##############################################
 
+outp=False
 proc_per_line=10 # how many reactions per line roughly ?
 _fc=True
 _tite=False
@@ -122,6 +138,8 @@ scale=0.2
 db="sList.db"
 fp=open("readDb.log","w")
 noRoute=False
+lock=False
+lock_file="/var/www/html/public/images/report/readDb.lock"
 for n,op in enumerate(sys.argv):
     fp.write(f" {op}")
     if skip:
@@ -135,6 +153,8 @@ for n,op in enumerate(sys.argv):
             chem=sys.argv[n+1]
             fp.write(f" {chem}")
             skip=True
+        case '-lock':
+            lock=True
         case '-ppt':
             ppt=True
         case '-heavy':
@@ -180,15 +200,20 @@ for n,op in enumerate(sys.argv):
             oper='drop'
         case '-db':
             oper='db'
+        case '-askTids':
+            oper='askTids'
         case '-force':
             forced=True
+        case '-done':
+            outp=sys.argv[n+1]
+            skip=True
 
     fp.write("\n")
 fp.close()
 conn=sqlite3.connect(db)
 cur=conn.cursor()
 
-#print("options:",pid,oper)
+#print("options:",pid,oper,db)
 
 if _web:
     tmp_dir="/".join(debug_log.split("/")[:-1])
@@ -198,10 +223,38 @@ if _web and debug:
     with open(debug_log,"w") as fp:
         fp.write(f"{oper}\n")
 
+if oper=='askTids':
+    print(getPids(cur))
+    exit()
+
 if oper=='drop':
+    dr="/var/www/html/public/images"
+    if pid=="all":
+        pid=getPids(cur);
+
+#    with open(debug_log,"w") as fp:
+#        fp.write(pid+":remove\n")
+
     for p in pid.split(','):
         if int(p)<0:
             continue;
+        ret=cur.execute(f"""select user,date from searchList where id='{p}';""")
+        ret=ret.fetchall()
+
+        uid=ret[0][0];
+        date=ret[0][1];
+        dst="/var/www/html/public/images/"+uid+"/"+date+"/"
+        if os.path.isdir(dst):
+#            with open(debug_log,"w") as fp:
+#                fp.write(dst+":remove\n")
+            shutil.rmtree(dst)
+        if db=="sList.db":
+            pdf="/var/www/html/public/images/report/"+str(p)+".pdf"
+        else:
+            pdf="/var/www/html/public/images/"+uid+"/report/"+str(p)+".pdf"
+        if os.path.isfile(pdf):
+            os.remove(pdf)
+
         cur.execute(f"""drop table searchTable{p}""")
         cur.execute(f"""delete from searchList where id={p}""")
         cur.execute(f"""delete from parent where id={p}""")
@@ -290,6 +343,18 @@ if os.path.isfile(output_file) and not forced:
     conn.close()
     exit()
 
+chk=db+":"+str(pid)
+if lock!=False:
+    if os.path.isfile(lock_file):
+        with open(lock_file,"r") as fp:
+            for line in fp:
+                if chk in line:
+#                print("this-->"+chk)
+                    exit()
+
+if lock!=False:
+    with open(lock_file,"a") as fp:
+        fp.write(chk+"\n")
 head=None
 
 if _include_subsets:
@@ -338,7 +403,6 @@ if oper=='db':
     with open(log_name,"a") as fp:
         fp.write(f"mission ok\n")
     exit()
-
 
 allData,routes,newInfo,index=getAllData(ans,_routes)
 
@@ -392,6 +456,7 @@ else:
 page.scale=scale
 py=page.height/page.scale-page.mg
 for name,route in enumerate(theList):
+    print("---------->  Route"+str(route))
     now=str(int(time.time()-start))+" sec"
     ddd=dst+"/"+str(route)+"/"
     with open(index_file,"a") as fp:
@@ -412,6 +477,20 @@ for name,route in enumerate(theList):
 
     stack=[]
     top=-page.height;btm=page.height*10.0
+
+#ugly shift
+    ttt=-page.height
+    for obj in objs:
+        for item in obj:
+            if item['type']==1:
+                tt=item['pos'][0][1]+item['size'][1]
+                if ttt<tt:
+                    ttt=tt
+            else:
+                if ttt<item['pos'][0][1]:
+                    ttt=item['pos'][0][1]
+
+#    ttt=0
     for obj in objs:
         for item in obj:
             x0=item['pos'][0][0];y0=item['pos'][0][1]
@@ -419,7 +498,7 @@ for name,route in enumerate(theList):
 #                page.drawImage(ddd+item['svg'][0],x0,y0)
                 rr=chkProc(ddd,item['svg'][0])
                 stack.append([1,x0,y0,ddd+item['svg'][0]])
-                print("this",x0,y0)
+#                print("this",x0,y0)
                 btm,top=getMaxMin(y0,btm,top)
                 btm,top=getMaxMin(y0+rr[1][1],btm,top)
             else:
@@ -444,7 +523,6 @@ for name,route in enumerate(theList):
         page.stroke()
 
     p_range=getPageRange(btm,top,py,page)
-    print("p_range",p_range,len(p_range))
 
     title=True
     title=False
@@ -453,13 +531,13 @@ for name,route in enumerate(theList):
             my=i[2]
             if my>xx[0]-10 and my<xx[1]+10:
                 if i[0]==1:
-                    page.drawImage(i[3],i[1],my-xx[2])
+                    page.drawImage(i[3],i[1],my-xx[2]-ttt)
 
         for i in stack:
             my=i[2]
             if my>xx[0]-10 and my<xx[1]+10:
                 if i[0]==2:
-                    page.drawArrow(arrow(i[1],my-xx[2],i[3],i[4]-xx[2],i[5]))
+                    page.drawArrow(arrow(i[1],my-xx[2]-ttt,i[3],i[4]-xx[2]-ttt,i[5]))
 
         if not title:
             if len(_routes)>0:
@@ -479,7 +557,7 @@ for name,route in enumerate(theList):
         else:
             py=py+(xx[0]-xx[1])-page.mg*5
 
-    print("---------->  Route"+str(route))
+#    print("---------->  Route"+str(route))
 #    oy-=(hy*page.scale+page.mg)
     now=str(int(time.time()-start))+" sec"
     with open(log_name,"a") as fp:
@@ -492,4 +570,20 @@ for name,route in enumerate(theList):
 conn.close()
 page.close()
 with open(log_name,"a") as fp:
-    fp.write(f"mission ok\n")
+     fp.write(f"mission ok\n")
+
+if outp!=False:
+    with open(outp,"a") as fp:
+        fp.write("readDb_done\n")
+
+if lock:
+    lines=""
+    with open(lock_file,"r") as fp:
+        for line in fp:
+            if not chk in line:
+                lines=lines+line
+    if lines=="":
+        os.remove(lock_file)
+    else:
+        with open(lock_file,"w") as fp:
+            fp.write(lines)

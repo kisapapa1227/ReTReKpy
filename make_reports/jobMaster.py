@@ -141,15 +141,17 @@ def addDb(uid,ssh,db_type,name):
 
     src=pb+uid+"/report/"+name+".pdf"
     if db_type=="com":
-        dst=pb+"/report/"+tid+".pdf"
+        dst=pb+"/report/"
     else:
-        dst=pb+uid+"/report/"+tid+".pdf"
+        dst=pb+uid+"/report/"
 
-    logs("src:"+src)
-    logs("dst:"+dst)
-    comp=subprocess.run(['mv',src,dst],capture_output=True,text=True)
-    for i in comp.stdout.split("\n"):
-        logs(i)
+    comp=subprocess.run(['python3',wk+"make_reports/readDb.py","-u",uid,"-id",tid,"-d",dst,"-database",db,"-force"],capture_output=True,text=True)
+
+#    logs("src:"+src)
+#    logs("dst:"+dst)
+#    comp=subprocess.run(['mv',src,dst],capture_output=True,text=True)
+#    for i in comp.stdout.split("\n"):
+#        logs(i)
 
 def updateSlave(uid,r,where,cur,fin):
     now=time.time()
@@ -245,9 +247,11 @@ def askProgress(cur,uid):
 #    dt=datetime.fromtimestamp(ut,JST)
 #    print("will finish at "+dt.strftime('%Y/%m/%d %H:%M:%S'))
     if route<2 or route==max_route:
-        mess+=";--:--:--"
+        mess+=";残り時間 --:--:--"
+    elif exp<now:
+        mess+=";後処理中"
     else:
-        mess+=";"+myFormatTime(exp-now)
+        mess+=";残り時間 "+myFormatTime(exp-now)
     return mess
 
 def myFormatTime(dt):

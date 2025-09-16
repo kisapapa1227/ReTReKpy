@@ -22,7 +22,6 @@ from pptx.dml.color import RGBColor
 from PIL import Image
 import shutil
 import Levenshtein
-import sqlite3
 import datetime
 
 version="1.7 08052025"
@@ -64,7 +63,7 @@ class openReport:
             self.font_size=4*mm
             self._font_size=4*mm
             self.P2PRatio=1.0
-        elif ext=='ppt':
+        elif ext=='pptx':
             self.type='ppt'
             self.page=Presentation()
             self.page.slide_height=Inches(8.27)
@@ -124,7 +123,7 @@ class openReport:
                     case 'line':
                         print(s[0]+":",'{:1g}'.format(s[1]),'{:1g}'.format(y1-s[2]),'{:1g}'.format(s[3]),'{:1g}'.format(y1-s[4]),end=";")
             self.stack=[]
-            print()
+            #print()
         else:
             blank_slide_layout = self.page.slide_layouts[6]
             self.slide = self.page.slides.add_slide(blank_slide_layout)
@@ -669,7 +668,7 @@ def head_page(head,page,arrange=True):
     
     p=1
     for n,route_id in enumerate(head[2][0]):
-        print("the ",route_id)
+#        print("the ",route_id)
         nx,ny,py=easyTrans(page,page.width*0.8,py)
         if arrange:
             ids,p=setIds(p,route_id[0])
@@ -1150,7 +1149,7 @@ def shiftForBranch(objs):
                     yy=item['pos'][0][1]-item['size'][1]/2
                     if by>yy:
                         by=yy
-        shift=ty-by
+        shift=ty-by+100
         fool=0
         for item in objs[i]:
             if fool==0:
@@ -1170,8 +1169,8 @@ def lineBraker(page,objs):
 
 def cutIt(page,objs,ok):
     theWidth=page.width/page.scale*0.9
+    by=False;ty=False
     for obj in objs:
-        by=False;ty=False
         for item in obj:
             xx=item['pos'][0][0]+item['size'][0]
             if xx<theWidth:
@@ -1179,13 +1178,14 @@ def cutIt(page,objs,ok):
                     yy=item['pos'][0][1]-item['size'][1]/2.0
                 else:
                     yy=item['pos'][0][1]
+
                 if by==False:
                     by=yy
                 else:
                     if by>yy:
                         by=yy
-            else:
-#            elif xx<theWidth*2:
+#            else:
+            elif xx<theWidth*2:
                 if item['type']==2:
                     yy=item['pos'][0][1]+item['size'][1]
                 else:
@@ -1193,7 +1193,7 @@ def cutIt(page,objs,ok):
 # corrected 08192025
 #                    yy=item['pos'][0][1]+item['size'][1]/2.0 orig
 #                    yy=item['pos'][0][1]+item['size'][1]/2.0
-                    yy=item['pos'][0][1]+item['size'][1]
+                    yy=item['pos'][0][1]+item['size'][1]/2.0
                 if ty==False:
                     ty=yy
                 else:
@@ -1225,13 +1225,18 @@ def easyGetBottom(objs):
                     top=yy
     return top-hy,top,hy
 
-def stackGoal(connect,n,line,tag):
+def stackGoal(connect,n,line,tag,i=1):
 
-    ret=[connect[n][2][1],line,tag]
+    ret=[connect[n][2][i],line,tag]
     if len(connect[n][7])>0:
         ret[2]+=1
 
     return ret
+
+def getNext(c,tmp_goal):
+    if len(c)>0:
+        return c[0]
+    return -1
 
 def makeObject(page,connect,fsize):
 
@@ -1241,6 +1246,8 @@ def makeObject(page,connect,fsize):
 # find goal
 #
     n=0
+#    connect[13][3]=6
+#    print(connect,len(connect))
     for i in range(len(connect)):
         if connect[i][3]<0:
             goal=n=i
@@ -1264,7 +1271,8 @@ def makeObject(page,connect,fsize):
         item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
         l=len(connect[n][2])
         if l>1:
-            tmp_goal.append(stackGoal(connect,n,line,tag))
+            for i in range(1,l):
+                tmp_goal.append(stackGoal(connect,n,line,tag+i,i=i))
 
         item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
 
@@ -1272,39 +1280,42 @@ def makeObject(page,connect,fsize):
             item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
             objs.append(obj);line+=1
             break
-        n=connect[n][2][0]
+        n=getNext(connect[n][2],tmp_goal)
 
     while len(tmp_goal)>0:
         r=tmp_goal.pop()
         n=r[0];obj=[];tag=0
 #        hint.append([r[1],r[2]]) # to which the line connect (line,tag)
-
-        item=objs[r[1]][r[2]] # connecting position
+#        item=objs[r[1]][r[2]] # original 20250904
+        item=objs[r[1]][r[2]-1] # connecting position
 #        x0=item['pos'][0][0]-page.mg
         x0=item['pos'][0][0]-page.mg
         y0=item['pos'][0][1]+item['size'][1]/2
 #        item=objs[r[1]][r[2]+2]
         ln=item['size'][0]
+#        xx=x0-ln
         xx=x0-ln
         item=setItem(2,[[xx,0],[x0,y0]],[],[ln,0]);
         obj.append(item);tag+=1
 
-        n=connect[n][2][0]
-        item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-        item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
+        n=getNext(connect[n][2],tmp_goal)
+        if n>-1:
+            item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
+            item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
 
         if len(connect[n][2])<1:
             item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
             objs.append(obj)
             n=-1
         else:
-            n=connect[n][2][0]
+            n=getNext(connect[n][2],tmp_goal)
 
         while n>-1:
 # catalysis object
             l=len(connect[n][2])
             if l>1:
-                tmp_goal.append(stackGoal(connect,n,line,tag))
+                for i in range(1,l):
+                    tmp_goal.append(stackGoal(connect,n,line,tag+i,i=i))
 
             item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
             item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
@@ -1312,7 +1323,7 @@ def makeObject(page,connect,fsize):
             if l<1:
                 objs.append(obj);line+=1
                 break
-            n=connect[n][2][0]
+                n=getNext(connect[n][2],tmp_goal)
 
     xx=0
     for obj in objs:
@@ -1365,9 +1376,8 @@ def mySort(src):
         index.append(-1)
 
     n=0
-    print(mm)
     for ds in dst:
-        print("ds",ds)
+#        print("ds",ds)
         for d in reversed(ds[0]):
             if index[d]==-1:
                 index[d]=n;n+=1

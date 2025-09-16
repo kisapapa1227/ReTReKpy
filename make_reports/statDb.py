@@ -166,16 +166,16 @@ def findRing(sims):
                     continue
                 p=s;flag=False;l=getLevel(s,sims);r=ss+s;continue
             if s==p:# end point
-                print("-->",l,r);
+#                print("-->",l,r);
                 r=r+s;return r
         if not flag:
             if s=="(":
                 lv=lv+1;continue
             elif s==")":
                 lv=lv-1;continue
-            print(lv,l,s,lv<=l)
+#            print(lv,l,s,lv<=l)
             if lv <= l and not s.isdigit():
-                print("hit ",s)
+               # print("hit ",s)
                 r=r+s
         ss=s
     return r
@@ -223,7 +223,7 @@ def getBinder(sims):
 
     while numRing(tmp)>0:
         r=findRing(tmp)
-        print("find",cnt,r,tmp);cnt+=1
+#        print("find",cnt,r,tmp);cnt+=1
         p=Chem.MolFromSmiles(tmp)
         x=Chem.MolFromSmiles(r)
 #        tmp=Chem.MolToSmiles(Chem.ReplaceCore(p,x,labelByIndex=True))
@@ -595,6 +595,7 @@ for id in ids:
                             xx+=r[0]
                         page.drawArrow(arrow(x0,y0,x1,y1,page.scale))
             page.stroke()
+            print("\n");
     print("end-forDraw")
 #
 #        print(core)

@@ -37,223 +37,6 @@ else:
 
 _magic_x=650
 
-class openReport:
-    def __init__(self,file,scale):
-        ext=file.split(".")[1]
-        if ext=='pdf':
-            print("open pdf:",file)
-            self.type=ext
-            self.scale=scale
-            self.page=canvas.Canvas(file,pagesize=landscape(A4))
-            self.font_name="Times-Bold"
-            self.height=210*mm
-            self.width=297*mm
-            self.font_size=4*mm
-            self._font_size=4*mm
-        else:
-            self.type='ppt'
-            self.scale=scale
-            self.page=Presentation()
-            self.page.slide_height=Inches(8.27)
-            self.page.slide_width =Inches(11.69)
-            self.height=self.page.slide_height
-            self.sc=Inches(11.69)/830
-#            self.sc=Inches(8.0)/800
-            blank_slide_layout = self.page.slide_layouts[6]
-            self.slide = self.page.slides.add_slide(blank_slide_layout)
-            self.file=file
-            self.font_name="Times-Bold"
-            self.font_size=14 # 14<-16 
-            self._font_size=14 #
-
-    def getSpan(self):
-#       scale=_magic_x/(span)
-        return _magic_x/self.scale
-     
-    def setFont(self,font_name=None,font_size=None):# size is relative value to default
-        if self.type=='pdf':
-            if font_name:
-                self.font_name=font_name
-            if font_size:
-                self.font_size=self._font_size*font_size
-            self.page.setFont(self.font_name,self.font_size)
-        else:
-            if font_size:
-                self.font_size=self._font_size*font_size
-
-    def stroke(self):
-        if self.type=='pdf':
-            self.page.showPage()
-        else:
-            blank_slide_layout = self.page.slide_layouts[6]
-            self.slide = self.page.slides.add_slide(blank_slide_layout)
-
-    def drawImage(self,fn,x,y,scale,bt=False):
-        if bt:
-            y=y+self.scale*0.55
-        else:
-            y=y-scale*0.4
-#            y=y
-
-        if self.type=='pdf':
-            drawing=svg2rlg(fn)
-            drawing.renderScale=scale/drawing.width
-            renderPDF.draw(drawing, canvas=self.page, x=x, y=y)
-        else:
-            work=dr+"/komai.svg"
-
-            key="2.0px"
-            kkk="4.0px"
-
-            with open(fn,"r") as f:
-                all=f.readlines()
-
-            with open(work,"w") as f:
-                for line in all:
-                    o=line.replace(key,kkk)
-                    f.write(o)
-
-            gn=fn.split(".svg")[0]+".jpg"
-            if _web:
-                subprocess.run(['/usr/bin/convert',work,gn])
-            else:
-                subprocess.run(['convert',work,gn])
-            x0,y0=x*self.sc,self.page.slide_height-(y+scale)*self.sc
-        
-            self.slide.shapes.add_picture(
-                gn,left=x0,top=y0,
-#                width=scale*self.sc, height=scale*self.sc
-                width=scale*self.sc*0.9, height=scale*self.sc*0.9
-    )
-
-
-    def drawLine(self,pt):
-        if self.type=='pdf':
-            self.page.line(pt[0],pt[1],pt[2],pt[3])
-        else:
-            x1,y1=pt[0]*self.sc,self.page.slide_height-pt[1]*self.sc
-            x2,y2=pt[2]*self.sc,self.page.slide_height-pt[3]*self.sc
-            putLine(x1,y1,x2,y2,self.slide.shapes)
-
-    def drawArrow(self,pt):
-        if self.type=='pdf':
-            self.page.line(pt[0],pt[1],pt[2],pt[3])
-            self.page.line(pt[2],pt[3],pt[4],pt[5])
-            self.page.line(pt[2],pt[3],pt[6],pt[7])
-        else:
-            x0,y0=pt[0]*self.sc,self.page.slide_height-pt[1]*self.sc
-            x1,y1=pt[2]*self.sc,self.page.slide_height-pt[3]*self.sc
-            x2,y2=pt[4]*self.sc,self.page.slide_height-pt[5]*self.sc
-            x3,y3=pt[6]*self.sc,self.page.slide_height-pt[7]*self.sc
-            group=[]
-            group+=[putLine(x0,y0,x1,y1,self.slide.shapes)]
-            group+=[putLine(x1,y1,x2,y2,self.slide.shapes)]
-            group+=[putLine(x1,y1,x3,y3,self.slide.shapes)]
-            self.slide.shapes.add_group_shape(group)
-
-    def getProperLength(self,mag,string):
-        if self.type=='pdf':
-            tx=string
-            while True:
-                t=(self.getSpan()-1)*self.scale-stringWidth(tx,self.font_name,self.font_size)
-                if t>0:
-                    return len(tx)
-                tx=tx[0:len(tx)-3]
-        else:
-            return 50
-
-    def drawPhrase(self,x,y,string,center=False,adj=True):
-        if self.type=='pdf':
-            drawString(self,x,y,string,center=center,adj=adj)
-        else:
-            shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,py)
-
-    def drawString(self,x,y,string,center=False,adj=True):
-        if self.type=='pdf':
-            if center:
-                x+=self.getSpan()*self.scale/2-stringWidth(string,self.font_name,self.font_size)/2
-            self.page.drawString(x,y,string)
-        else:
-            xx=x*self.sc
-            yy=self.page.slide_height-y*self.sc-self.font_size
-            if adj:
-#                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,Cm(1))
-                pw=Cm(0.1)*self.font_size*(len(string)+2)*0.18
-                py=Cm(0.1)*self.font_size*0.5
-                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),pw,py)
-            else:
-                shape=self.slide.shapes.add_textbox(xx,yy-Pt(self.font_size),Cm(1),Cm(10))
-
-            tf=shape.text_frame
-            tf.word_wrap=True
-#            tf.auto_size=MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
-            p=tf.paragraphs[0]
-            run=p.add_run()
-            run.text=string
-            run.font.name=self.font_name
-            run.font.size=Pt(self.font_size)
-            #komai
-
-    def close(self):
-        if self.type=='pdf':
-            self.page.save()
-        else:
-            self.page.save(self.file)
-
-def putLine(x0,y0,x1,y1,shapes):
-    if x1>x0:
-        if y1>y0:
-           shape=shapes.add_shape(MSO_SHAPE.LINE_INVERSE,x0,y0,x1-x0,y1-y0)
-           shape.element.getchildren()[1].getchildren()[0].set('flipV','1')
-        else:
-           shape=shapes.add_shape(MSO_SHAPE.LINE_INVERSE,x0,y1,x1-x0,-y1+y0)
-    else:
-        if y1>y0:
-           shape=shapes.add_shape(MSO_SHAPE.LINE_INVERSE,x1,y0,-x1+x0,y1-y0)
-        else:
-           shape=shapes.add_shape(MSO_SHAPE.LINE_INVERSE,x1,y1,-x1+x0,-y1+y0)
-           shape.element.getchildren()[1].getchildren()[0].set('flipV','1')
-    shape.fill.solid()
-    shape.fill.fore_color.rgb=RGBColor(0,255,0)
-    shape.line.color.rgb=RGBColor(0,0,0)
-    return shape
-
-def picSize():
-    return 1.2
-
-def smile2sgv(smiles,name,dr=dr,size=200):
-#    if os.path.exists(dr):
-#        shutil.rmtree(dr)
-    if not os.path.exists(dr):
-        os.makedirs(dr)
-
-    mol=Chem.MolFromSmiles(smiles)
-#    mw=rdMolDescriptors.CalcExactMolWt(mol)
-    mw=mol.GetNumAtoms()
-#    mw=Chem.AddHs(mol).GetNumAtoms()
-#    fc=int(math.sqrt(mw/5))
-    fc=int(math.sqrt(mw)/1.5)
-#    print(smiles,mw,fc)
-#    fc=int(math.pow(mw/20,0.333))
-#    print(mw,fc,name)
-    if fc<1:
-        fc=1
-    view = rdMolDraw2D.MolDraw2DSVG(size*fc,size*fc)
-
-    option=view.drawOptions()
-    option.circleAtoms=False
-    option.continuousHightlight=False
-
-    tm = rdMolDraw2D.PrepareMolForDrawing(mol)
-    view.DrawMolecule(tm)
-    view.FinishDrawing()
-
-    svg=view.GetDrawingText()
-
-    with open(dr+"/"+name,'w') as f:
-        f.write(svg)
-
-    return fc
 
 def getInfo(tg,lines):
     key='Route:'+str(tg)
@@ -272,6 +55,10 @@ def getInfo(tg,lines):
             each=l.split(',')
             ret.append(each[:-1])
     return ret
+
+def log(com):
+    with open("/var/www/html/public/images/report/addDb.log","a") as fp:
+        fp.write(com+"\n")
 
 def getSmiles(tg,lines):
     key='Route:'+str(tg)
@@ -525,456 +312,6 @@ def initConnect(smiles,fc=False,mode=1):
     return connect,start
 #        smile2sgv(comp,"e"+str(n+1)+"x"+str(m+1)+".svg")
 
-def makeSvg(smiles,type=0):
-    size=100
-    fcs=[]
-    for n,proc in enumerate(smiles):
-        fc={}
-        for m,comp in enumerate(proc):
-            if ">" in comp:
-                continue
-#            print(comp,"e"+str(n+1)+"x"+str(m+1)+".svg") #debuf
-            fc[m]=smile2sgv(comp,"e"+str(n+1)+"x"+str(m+1)+".svg",size=size)
-        fcs.append(fc)
-
-    return fcs
-
-def arrow(x0,y0,x1,y1,scale,skip=1.0,fc=False,ugly_patch=True):
-
-    if not fc:
-        return prevArrow(x0,y0,x1,y1,scale,ugly_patch=ugly_patch)
-#
-# ugly patch
-#
-    if ugly_patch and x0>x1:
-        x1=x0+scale*3
-        y1=y0
-# end
-# anyway
-    l=math.sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0))
-    rt=(l-scale*skip)/l
-    sx=10
-    pi=3.1415/12.0 # 30 deg
-
-#from: shift full
-    x2=x0+skip*scale
-    y2=y0+scale/2
-#to: shift full 
-    x3=x1
-    y3=y1+scale/2
-
-    a=math.atan2(y3-y2,x3-x2)
-
-    xx=x3-sx*math.cos(a+pi)
-    yy=y3-sx*math.sin(a+pi)
-    ret=[x2,y2,x3,y3,xx,yy]
-
-    xx=x3-sx*math.cos(a-pi)
-    yy=y3-sx*math.sin(a-pi)
-
-    return ret+[xx,yy]
-
-def prevArrow(x0,y0,x1,y1,scale,skip=1.0,ugly_patch=True):
-#
-# ugly patch
-#
-    if ugly_patch and x0>x1:
-        x1=x0+scale*3
-        y1=y0
-# end
-# anyway
-    l=math.sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0))
-    rt=(l-scale*skip)/l
-    sx=10
-    pi=3.1415/12.0 # 30 deg
-
-#from: shift full
-    x2=x1+(x0-x1)*(rt-0.10)
-    y2=y1+(y0-y1)*(rt-0.10)+scale/2
-#to: shift full 
-    x3=x0+(x1-x0)*(1.0-0.10)
-    y3=y0+(y1-y0)*(1.0-0.10)+scale/2
-
-    a=math.atan2(y1-y0,x1-x0)
-
-    xx=x3-sx*math.cos(a+pi)
-    yy=y3-sx*math.sin(a+pi)
-    ret=[x2,y2,x3,y3,xx,yy]
-
-    xx=x3-sx*math.cos(a-pi)
-    yy=y3-sx*math.sin(a-pi)
-
-    return ret+[xx,yy]
-
-def getName(a,b,dr=dr):
-    fn=dr+"/e"+str(a+1)+"x"+str(b)+".svg"#<-- need modification
-    return(fn)
-
-def getGoal(smiles,connect):
-    goal=[]
-    l=len(smiles)
-    for i in range(l):
-        if connect[i][3]==-1:
-            goal.append(i)
-    return goal
-
-def getSharpHead(h,c):
-    sharpHead=[]
-
-    for n in h:
-        branch=[]
-        while True:
-            if len(c[n][2])<1:#i.e. starting point
-                if len(branch)<1:# and no reserved entry
-                    break
-                else:
-                    m=branch.pop(-1) # pop and restart from reserved entry
-                    n=c[m][3]
-            elif len(c[n][2])>1:# branching 
-                branch=branch+c[n][2][1:] # thus reserve others
-                m=c[n][2][0] # go forward
-            else:
-                m=c[n][2][0] # 
-            if m>-1 and c[n][4]<c[m][4]:
-                sharpHead.append([n,m])
-            n=m
-            if n<0:# anyway no
-                break
-    return sharpHead
-
-def rightEdge(i,fc,cnt,l_fc):
-    if i[1][0]<0 or cnt>=l_fc:
-        return i[4]+len(i[7])+2
-    return i[4]+len(i[7])+2+fc[cnt][i[1][0]]
-
-def prevEvalHeight(connect):
-    depth=0
-    for i in range(len(connect)):
-        if depth > connect[i][5]:
-            depth=connect[i][5]
-    return depth
-
-def evalHeight(c,fc):
-    if not fc:
-        return prevEvalHeight(c)
-
-    depth=0
-    for n,vv in enumerate(fc):
-        for v in vv.values():
-            w=c[n][5]-v/2
-            if depth > w:
-                depth=w
-    return depth
-
-def compSmiles(s1,s2):
-    for a,b in zip(s1,s2):
-        if a!=b:
-            return False
-    return True
-
-def annealHead(sh,c):
-    for p in sh:
-        m=len(c)
-        keep=c[p[1]][0]
-        #komai 0830
-#        c[p[1]][3]=-2 # right edge out: no connection
-        c[p[1]][3]=-2 # right edge out: no connection
-        c[p[0]][2]=[-1] # right edge in
-
-def _ccn(i):
-    if i<10:
-        return 1
-    if i<100:
-        return 2
-    return 3
-
-def getPropString(m):
-    if len(m)<2:
-        s=str(m[0])
-#        w=_ccn(m[0])+2
-        w=_ccn(m[0])+2
-        return s,w
-
-#    s=str(m[-1])+"-"+str(m[0])
-    s=str(m[0])+"-"+str(m[-1])
-#    w=_ccn(m[0])+_ccn(m[-1])+2
-    w=_ccn(m[0])+_ccn(m[-1])+2
-    return s,w
-
-def preDraw(init,proc,branch):
-
-    ixx=0
-    yy=1
-    pos={}
-    deep={}
-
-    for i in proc[init]:
-        pos[i]=[ixx,yy]
-        s,w=getPropString(branch[i])
-        ixx=ixx+w
-    deep[init]=yy
-
-    right=ixx
-    theLeft=0
-    y1=yy
-
-    for j in reversed(proc):
-        if j==init:
-            continue
-        deep[j]=0
-        first=True
-        prev=True
-        curr=True
-        ixx=-1
-
-        for i in reversed(proc[j]):
-            if i in pos:
-                ixx=pos[i][0]
-                yy=pos[i][1]
-                curr=True
-            else:
-#                if ixx<0:
-#                    ixx=right
-                if ixx<0:
-                    ixx=theLeft
-                curr=False
-                s,w=getPropString(branch[i])
-                if first:
-                    y1=y1+1
-                    first=False
-                yy=y1
-
-                pos[i]=[ixx-w,yy]
-
-            ixx=pos[i][0]
-            if ixx<theLeft:
-                theLeft=ixx
-            prev=curr
-
-            if deep[j]<yy:
-                deep[j]=yy
-    if theLeft<0:
-        for i in pos:
-            pos[i][0]-=theLeft
-
-    return pos,deep
-
-def similarityOnRoute(init,proc,branch,all):
-
-    pos,deep=preDraw(init,proc,branch)
-    name={}
-    for j in proc:
-        if deep[j] in name:
-            name[deep[j]]+=","+str(j)
-        else:
-            name[deep[j]]=str(j)
-
-    sim=[]
-    fps=False;
-    for i in name:
-        for j in name[i].split(','):
-            tg_route=j
-            ssMax=0
-            ss=getSmiles(j,all)
-            sl=len(ss)
-            if sl>ssMax:
-                ssMax,tg_route=sl,j
-        fpMin=10
-        if j!=tg_route:
-            ss=getSmiles(tg_route,all)
-        if not fps:
-            fps=FingerprintMols.FingerprintMol(Chem.MolFromSmiles(ss[-1][-1]))
-        else:
-            tg=whichIsFirstMaterial(ss[0],_type)
-            fpp=FingerprintMols.FingerprintMol(Chem.MolFromSmiles(ss[0][tg]))
-            sm=DataStructs.FingerprintSimilarity(fps,fpp)
-#            sim.append([tg_route,sm])
-#    return sim easy way
-# question....
-            for smile in ss:
-                fpp=FingerprintMols.FingerprintMol(Chem.MolFromSmiles(smile[-1]))
-                ss=DataStructs.FingerprintSimilarity(fps,fpp)
-                if sm>ss:
-                    sm=ss
-            sim.append([tg_route,sm])
-    print("sim",sim)
-    return sim
-
-def head_page(head,page,hope):
-#head=[chemical,getSmiles(route[0],all),ox,oy,["statistics will be ..."]]
-    ox=40
-    oy=480
-    mag=3
-
-    page.setFont(font_size=mag)
-    page.drawString(ox,oy,head[0])
-    scale=page.scale
-#
-    smiles=head[1][-1][-1]
-    fn="head.svg"
-    x0=ox
-    py=oy-scale*10.5
-#    print("smiles --->",smiles)
-    smile2sgv(smiles,fn,size=100)
-    page.drawImage(dr+"/"+fn,x0,py,scale*10)
-
-    pt=0;l=len(smiles)
-#    py=py-mag*page.scale
-    mg=2
-    page.setFont(font_size=mg)
-    wd=page.getProperLength(mg,smiles)
-#    wd=7
-    tl=smiles
-    n=int(math.ceil(l/wd))
-    py=(n+0.5)*page.font_size
-    while pt<l:
-        end=min(pt+wd,l)
-        tl=smiles[pt:end]
-        py-=page.font_size
-        page.drawString(ox,py,tl,center=True)
-        pt+=wd
-
-#    print("head",type(head[2][0]))
-    if type(head[2][0])==type(True):
-        page.drawString(250,500,head[2][1])
-        page.close()
-        exit()
-
-    proc=head[-1][0]
-    branch=head[-1][1]
-    init=head[-1][2]
-    sear=head[-1][3]
-
-    ox=250
-    oy=550
-    sx=100
-    sy=50
-    sy=35
-
-    page.drawString(ox,oy,"Drawing summary")
-#
-# draw initial one
-#
-    ll=0
-    for i in proc[init]:
-        _,w=getPropString(branch[i])
-        ll+=w
-
-    if ox+(ll+8)*(sx)>_magic_x:
-        sx=(_magic_x-ox)/(ll+8)
-#komai
-    if ll>30:
-        page.setFont(font_size=1.5)
-    print("length",ll)
-
-    page.drawString(ox+(2)*sx,oy-(1)*sy,"reactions")
-
-#    ox=ox+sx*5
-    ox=ox+sx*0
-    yy=oy-sy*2
-
-    first=True
-    scale=20
-    
-    pos,deep=preDraw(init,proc,branch)
-#
-# the first line
-#
-    for i in pos:
-        ix=pos[i][0]
-        iy=pos[i][1]
-        s,w=getPropString(branch[i])
-        page.drawString(ox+(ix+2)*sx,oy-(iy+1)*sy,s)
-
-    ddd={}
-    for i in proc:
-        first=True
-        for j in proc[i]:
-            x1=pos[j][0]
-            y1=pos[j][1]
-            if not first:
-                draw=False
-                if j0 in ddd:
-                    if j in ddd[j0]:
-                        ddd[j0].append(j)
-                        draw=True
-                else:
-                    ddd[j0]=[j]
-                    draw=True
-#                if draw:
-                if True:
-                    page.drawArrow(arrow(ox+(x0+w-1)*sx,oy-(y0+1)*sy-4,ox+(x1+1.9)*sx,oy-(y1+1)*sy-4,scale,fc=True)) 
-            s,w=getPropString(branch[j])
-            first=False
-            x0=x1
-            y0=y1
-            j0=j
-
-    name={}
-    for j in proc:
-        if deep[j] in name:
-            name[deep[j]]+=","+str(j)
-        else:
-            name[deep[j]]=str(j)
-
-    ll=0
-    for j in name:
-        if ll<len(name[j]):
-            ll=len(name[j])
-
-    if ll>23:
-        page.setFont(font_size=1)
-    elif ll>10:
-        page.setFont(font_size=1.5)
-    else:
-        page.setFont(font_size=2)
-
-    bt=0
-    for j in name:
-        print(j,name[j])
-        if bt<j:
-            bt=j
-        if len(name[j])>20:
-            page.drawString(_magic_x+sx*2,oy-(j+1)*sy,name[j][:22])
-            page.drawString(_magic_x+sx*2,oy-(j+1)*sy-sy/2,name[j][22:])
-        else:
-            page.drawString(_magic_x+sx*2,oy-(j+1)*sy,name[j])
-
-    page.setFont(font_size=2)
-    page.drawString(_magic_x+sx*3,oy-(1)*sy,"route #id")
-
-    if oy-(bt+2)*sy-sy<0:
-        py=oy-sy
-    else:
-        py=oy-(bt+2)*sy-sy
-
-    page.drawString(ox,py,sear)
-    py-=sy*0.5
-
-    page.setFont(font_size=1)
-
-    add="Routes start at similarity of "
-    for i in sorted(hope):
-        add+="{:.2f}".format(i[1])+"("+str(i[0])+"),"
-        if len(add)>90:
-            page.drawString(ox,py,add)
-            py-=sy*0.01
-            add=""
-
-    if len(add)>0:
-       page.drawString(ox,py-sy*0.5,add)
-
-    page.stroke()
-    page.setFont(font_size=1)
-
-# komai2
-def getList(s):
-    ret=[]
-    s=s.split('[')[1].split(']')[0].split(',')
-    for i in s:
-        ret.append(int(i))
-    return ret
-
 def getAllRoutes(all):
     ret=[]
     key='Route:'
@@ -1065,19 +402,19 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
             l=len(ss)
             pt=r
 
-    print("len",len(_smiles),l,pt)
+#    print("len",len(_smiles),l,pt)
     if l<1:
         return False
 
-    print("len",_smiles)
+#    print("len",_smiles)
     for ss in reversed(_smiles[pt]):
         if typ=="smiles":
-            print("1")
+#            print("1")
             ref.append(ss)
         else:
-            print("2",ss)
+#            print("2",ss)
             ref.append(ss[-1])
-        print("------------------------------ref\n",ss)
+#        print("------------------------------ref\n",ss)
 
     if typ!="smiles":
         ss=_smiles[pt][0][0]
@@ -1156,10 +493,6 @@ def getMatrixAgent(rt,all,typ="smiles"):# remove redundant routes
 #    print("this is submatch",sSubMatch)
     
     return ret,ppt
-
-def getTheBottom(c,f):
-    py=evalHeight(c,fc)
-    return py-3
 
 def getLeftTab():
     return 2
@@ -1326,10 +659,14 @@ user='kisa'
 com='-u user -d input_dir -s script.sh'
 ops={'-h':com}
 skip=False
+outp=False
 _product_only=True
 _product_only=False
 _include_subsets=False
 _include_subsets=True
+total_loop=0
+lock=False
+lock_file="/var/www/html/public/images/report/addDb.lock"
 
 for n,op in enumerate(sys.argv):
     if skip:
@@ -1342,11 +679,19 @@ for n,op in enumerate(sys.argv):
         case '-d':
             input_dir=sys.argv[n+1]
             skip=True
+        case '-n':
+            total_loop=int(sys.argv[n+1])
+            skip=True
         case '-u':
             user=sys.argv[n+1]
             skip=True
+        case '-lock':
+            lock=True
         case '-s':
             script=sys.argv[n+1]
+            skip=True
+        case '-done':
+            outp=sys.argv[n+1]
             skip=True
 
 #print(_routes)
@@ -1360,12 +705,25 @@ with open(user+"_"+script,"r") as f:
             email=l.split('\n')[0].split('email=')[1]
         if 'python3' in l:
             es=l.split('\n')[0].split(' ')
-            for n,i in enumerate(es):
-                print(n,i)
+#            for n,i in enumerate(es):
+#                print(n,i)
+#print("script:"+user+"_"+script)
 smi="".join(es[2].split("'"))
 loop=es[3]
 factor=es[4]
 substance="".join(es[13].split("'"))
+
+chk=db+":"+substance
+if os.path.isfile(lock_file):
+    with open(lock_file,"r") as fp:
+        for line in fp:
+            if chk in line:
+#                print("locked:skip "+chk)
+                exit()
+
+if lock!=False:
+    with open(lock_file,"a") as fp:
+        fp.write(chk+"\n")
 
 opts=""
 for i in es[5:11]:
@@ -1412,8 +770,12 @@ mol=Chem.MolFromSmiles(smi)
 cSmiles=Chem.MolToSmiles(mol)
 dd=datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
-print(opts)
-cur.execute(f'insert into searchList(user, uname, email, smiles, cSmiles, date, substance, loop, factors, options) values("{user}","{uname}","{email}","{smi}","{cSmiles}",{dd},"{substance}",{loop},"{factor}","{opts}")')
+if total_loop!=0:
+    loop=total_loop
+#print(opts)
+sql=f'insert into searchList(user, uname, email, smiles, cSmiles, date, substance, loop, factors, options) values("{user}","{uname}","{email}","{smi}","{cSmiles}",{dd},"{substance}",{loop},"{factor}","{opts}")'
+cur.execute(sql)
+#print(sql)
 conn.commit()
 
 sql=f'select id from "searchList" where date = "{dd}";'
@@ -1424,10 +786,10 @@ total=dicToString(parent['total'])
 sub=dicToString(parent['sub'])
 id=ret.fetchall()[0][0]
 
-print("total",total)
-print(" sub" ,sub)
+#print("total",total)
+#print(" sub" ,sub)
 sql=f'insert into parent(id, total, sub) values({id},"{total}","{sub}")'
-print(sql)
+#print(sql)
 cur.execute(sql)
 conn.commit()
 
@@ -1455,3 +817,18 @@ print("end")
 
 print(f"substance:{substance}###")
 conn.close()
+if outp!=False:
+    with open(outp,"a") as fp:
+        fp.write("addDb_done\n")
+
+if lock:
+    lines=""
+    with open(lock_file,"r") as fp:
+        for line in fp:
+            if not chk in line:
+                lines=lines+line
+    if lines=="":
+        os.remove(lock_file)
+    else:
+        with open(lock_file,"w") as fp:
+            fp.write(lines)
