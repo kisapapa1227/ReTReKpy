@@ -80,11 +80,8 @@ time_limit = int(sys.argv[9]) if len(sys.argv) > 9 else 0
 csrf_token = sys.argv[10]
 csv = sys.argv[11]
 substance = sys.argv[12]
-
-if len(sys.argv)>13:
-    uid = sys.argv[13]
-else:
-    uid = ""
+uid = sys.argv[13]
+upper_time = int(sys.argv[14])
 
 config['knowledge']=['all']
 config['knowledge_weights']=knowledge_weights
@@ -126,30 +123,37 @@ logger = logging.getLogger(__name__)
 route_num = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 #komai
 
-if csv!='False':
-    out_dir=f"{_image_dir}/{uid}"
-    if len(substance)<1:
-        dt_now=datetime.datetime.now()
-        fn=out_dir+"/search_"+str(dt_now.year)+str(dt_now.month).zfill(2)+str(dt_now.day).zfill(2)+str(dt_now.hour).zfill(2)+str(dt_now.minute).zfill(2)+".txt"
-    else:
-        fn=out_dir+"/"+substance+".txt"
-#komai
-    if not os.path.isdir(out_dir):
-         os.mkdir(out_dir)
+out_dir=f"{_image_dir}/{uid}"
+if len(substance)<1:# when the name is omitted
+    dt_now=datetime.datetime.now()
+    substance="search_"+str(dt_now.year)+str(dt_now.month).zfill(2)+str(dt_now.day).zfill(2)+str(dt_now.hour).zfill(2)+str(dt_now.minute).zfill(2)
 
-    if os.path.isfile(fn):
-        os.remove(fn)
+fn=out_dir+"/"+substance+".txt"
 
+if not os.path.isdir(out_dir):
+     os.mkdir(out_dir)
+
+if os.path.isfile(fn):
+    os.remove(fn)
 
 #    sleep(1)
-    while os.path.isfile(fn):
-        sleep(1)
+while os.path.isfile(fn):
+    sleep(1)
 
-    with open(fn,"w") as fp:
-        fp.write(f"{smiles}\n")
+with open(fn,"w") as fp:
+    fp.write(f"{smiles}\n")
 
-for route in range(route_num):
-    route_id = route + 1    
+init = time.time()
+
+route=0
+while True:
+#for route in range(route_num):
+    now = time.time()
+    if upper_time!=0 and (now-init)>upper_time*60:
+        break
+    if route_num!=0 and route == route_num:
+        break
+    route = route + 1
     logger.setLevel(logging.WARNING)
     start = time.time()
     leaf_node, is_proven = mcts.search(expansion_model, rollout_model, in_scope_model, logger, gateway=gateway, time_limit=config['time_limit'])
@@ -164,16 +168,34 @@ for route in range(route_num):
     else:
         nodes.append(leaf_node)
 
-    if csv=='False':
-        print_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, selection_constant, time_limit, csrf_token, image_dir=_image_dir);
-    else:
-        myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles, route_id, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, substance, selection_constant, time_limit, csrf_token, fn, image_dir=out_dir);
+    myPrint_route_HTML(nodes, is_proven, logger, route_num, smiles, route, json_weights, save_tree, expansion_num, cum_prob_mod, chem_axon, substance, selection_constant, time_limit, csrf_token, fn, image_dir=out_dir);
 
-if csv!='False':
-    std=subprocess.run(['python3','make_reports/routeAnalyzer.py','-chem',substance,'-d',out_dir,'-p','12','-show_subsets'],capture_output=True,text=True).stdout
-    with open(fn,"a") as fp:
-        fp.write("reported\n")
+db=f'tmp{uid}.db'
 
-    with open(fn+"_log","w") as fp:
-        fp.write("routeAnalyzer\n")
-        fp.write(std+"\n")
+if os.path.isfile(db):
+    os.remove(db)
+
+#tt=['python3','make_reports/addDb.py','-u',uid,'-d',_image_dir,'-database',db,"-n",str(route)]
+#std=subprocess.run(tt,capture_output=True,text=True).stdout
+
+#with open(fn+"_log","a") as fp:
+#    fp.write("-----> addDb"+str(route)+"\n");
+#    for t in std.split("\n"):
+#        fp.write("ok:"+t+"\n")
+
+#tt=['python3','make_reports/readDb.py','-u',uid,'-id','1','-d',_image_dir+'/'+uid+'/report/','-database',db,"-chem",substance,"-force"]
+
+#std=subprocess.run(tt,capture_output=True,text=True).stdout
+#with open(fn+"_log","a") as fp:
+#    fp.write("-----> readDbDb\n");
+#    for t in std.split("\n"):
+#        fp.write("ok:"+t+"\n")
+
+with open(fn,"a") as fp:
+    fp.write("searched:"+substance+"\n")
+
+#time.sleep(1);
+#with open(fn+"_log","w") as fp:
+#with open(fn+"_log","a") as fp:
+#    fp.write("routeAnalyzer\n")
+#    fp.write(std+"\n")
