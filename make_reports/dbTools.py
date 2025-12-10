@@ -23,6 +23,9 @@ from PIL import Image
 import shutil
 import Levenshtein
 import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.chart import BarChart, Series, Reference
 
 version="1.7 08052025"
 
@@ -41,7 +44,7 @@ def topH():
     return 500
 
 class openReport:
-    def __init__(self,file,scale):
+    def __init__(self,file,scale,title=False):
         self.left=210*mm*0.05
         self.top=297*mm*0.05
         self.height=210*mm*0.9
@@ -49,7 +52,7 @@ class openReport:
         self.scale=scale
         self.mg=20
 
-        ext=file.split(".")[1]
+        ext=file.split(".")[-1]
 
         if ext=='txt':
             self.width*=1.5
@@ -63,8 +66,11 @@ class openReport:
             self.font_size=4*mm
             self._font_size=4*mm
             self.P2PRatio=1.0
+            if title!=False:
+                self.page.setTitle(title)
         elif ext=='pptx':
-            self.type='ppt'
+            print("open ppt",file)
+            self.type='pptx'
             self.page=Presentation()
             self.page.slide_height=Inches(8.27)
             self.page.slide_width =Inches(11.69)
@@ -76,6 +82,9 @@ class openReport:
             self._font_size=12 #
 #            self.P2PRatio=self.width/297*mm
             self.P2PRatio=self.page.slide_width/(297*mm)
+
+    def setOutput(self,stdout):
+        self.stdout=stdout
 
     def getSpan(self):
 #       scale=_magic_x/(span)
@@ -119,9 +128,18 @@ class openReport:
             #    print(s)
                 match s[0]:
                     case 'drawImage':
-                        print(s[0]+":",s[1],'{:1g}'.format(s[2]),'{:1g}'.format(y1-s[3]-s[5]*0.4),s[4],s[5],s[6],s[7],end=";")
+                        c=s[0]+": "+s[1]+' {:1g}'.format(s[2])+' {:1g}'.format(y1-s[3]-s[5]*0.4)+" "+str(s[4])+" "+str(s[5])+" "+s[6]+" "+s[7]
+
+                        if self.stdout==True:
+                            print(c,end=";")
+                        else:
+                            self.stdout.write(c+";")
                     case 'line':
-                        print(s[0]+":",'{:1g}'.format(s[1]),'{:1g}'.format(y1-s[2]),'{:1g}'.format(s[3]),'{:1g}'.format(y1-s[4]),end=";")
+                        c=str(s[0])+': {:1g}'.format(s[1])+' {:1g}'.format(y1-s[2])+' {:1g}'.format(s[3])+' {:1g}'.format(y1-s[4])
+                        if self.stdout==True:
+                            print(c,end=";")
+                        else:
+                            self.stdout.write(c+";")
             self.stack=[]
             #print()
         else:
@@ -158,7 +176,7 @@ class openReport:
             else:
                 self.stack.append(["drawImage",fn.split('/')[-1],ppx,ppy,width,height,smiles,'sub'])
             return 0,0
-        else:
+        else:# for pptx
             key="2.0px"
             kkk="4.0px"
 
@@ -167,10 +185,10 @@ class openReport:
 
             gn=fn.split(".svg")[0]+".jpg"
             mag=360
-            if _web:
+#            print(fn,gn)
+#            print("--------------------------->")
+            if not os.path.isfile(gn):
                 subprocess.run(['/usr/bin/convert','-density',f'{mag}',fn,gn])
-            else:
-                subprocess.run(['convert','-density',f'{mag}',fn,gn])
 
             ix,iy=self.getImageSize(fn)
 
@@ -190,7 +208,6 @@ class openReport:
 #            printF(gn,x0,y0,width,height)
 #            printF("(x,y):",x,y)
 #        return ix,iy
-
 
     def sizeFromFile(self,fn):
         tg=fn.split('/')[-1]
@@ -285,7 +302,7 @@ class openReport:
     def close(self):
         if self.type=='pdf':
             self.page.save()
-        else:
+        elif self.type=='pptx':
             self.page.save(self.file)
     def isPdf(self):
         if self.type=='pdf':
@@ -376,8 +393,8 @@ def cropSvg(fn):
 
     return [sx,sy]
 
-def chkProc(dr,name):
-    with open(dr+"/svgFile.info") as f:
+def chkProc(svg,name):
+    with open(svg) as f:
         lines = f.readlines()
     fc=-1;rs=False
     for line in lines:
@@ -390,13 +407,19 @@ def smile2svg(smiles,name,dr=dr,size=200,newProc=False):
 #    if os.path.exists(dr):
 #        shutil.rmtree(dr)
 
+    if dr[-1]=='/':
+        svg=dr+"svgFile.info"
+    else:
+        svg=dr+"/svgFile.info"
     if not os.path.exists(dr):
         os.makedirs(dr)
-        with open(dr+"/svgFile.info",'w') as f:
+
+    if not os.path.isfile(svg):
+        with open(svg,'w') as f:
             f.write("this file is made by readDb.py\n");
 
     if newProc:
-        fc,r=chkProc(dr,name)
+        fc,r=chkProc(svg,name)
         if fc>0:
             return fc,r
     
@@ -452,7 +475,9 @@ def makeSvg(smiles,dst,type=0):
         fc={}
         for m,comp in enumerate(proc):
             if ">" in comp:
-                continue
+                if m!=0:
+                    continue
+                comp="[Pu]"
             fn="e"+str(n+1)+"x"+str(m+1)+".svg"
             fc[m],fsize[fn]=smile2svg(comp,fn,dr=dst,newProc=True,size=size)
         fcs.append(fc)
@@ -464,7 +489,6 @@ def makeSvg(smiles,dst,type=0):
         with open(dst+"/svgFile.info",'a') as f:
             f.write('date:'+dd+"\n")
             f.write('size:'+ret.split('\t')[0]+"\n")
-        
     return fcs,fsize
 
 def arrowR(x0,y0,x1,y1):
@@ -597,10 +621,12 @@ def head_page(head,page,arrange=True):
     smiles=head[1][-1][-1]
     fn="head.svg"
     x0=ox
+    ffn=dr+"/"+fn.split(".svg")[0]+".jpg"
+    if os.path.isfile(ffn):
+        os.remove(ffn)
     smile2svg(smiles,fn,size=100)
     scale=page.scale
     page.scale=0.7
-    print("dr<--------------",dr)
     page.drawImage(dr+"/"+fn,x0,page.top)
 
     page.scale=scale
@@ -724,7 +750,7 @@ def head_page(head,page,arrange=True):
             pp=py+page.font_size*1.2*pos[p][2]
             nx=page.width*0.7/page.scale-page.font_size*pos[p][1]*2
             ny=pp/page.scale+(page.height-page.font_size)/page.scale
-            #komai
+
             page.drawArrow(
                     arrowR(nx1+ll*page.font_size*2,
                         ny1+page.font_size,
@@ -762,11 +788,15 @@ def preDraw(page,proc):
         for p in reversed(proc[0][i+1][1]):
             if d[p]<0:
                 s=toStr(p2[p])
-                d[p]=0;px=px+len(s)+2;pos[p]=[s,px,y]
+#                d[p]=0;px=px+len(s)+2;pos[p]=[s,px,y]
+                d[p]=0;x=x+len(s)+2;pos[p]=[s,x,y]
             else:
                 s=toStr(p2[p])
-                px=pos[p][1]
-        y-=1
+                try:
+#                    px=pos[p][1]
+                    x=pos[p][1]
+                except:
+                    pos[p]=[s,x,y]
 
     return pos
 
@@ -1130,9 +1160,12 @@ def setItem(a,b,c,d):
     ret['type']=a;ret['pos']=b;ret['svg']=c;ret['size']=d
     return ret
 
-def shiftForBranch(objs):
-
+def shiftForBranch(page,objs,ivt):
+    
+    s=[0]
+    print("ivt",ivt)
     for i in range(1,len(objs)):
+        shift=0
         x0=objs[i][-1]['pos'][0][0]
         x1=objs[i][ 0]['pos'][0][0]+objs[i][ 0]['size'][0]
         ty=-topH();by=topH()
@@ -1141,15 +1174,19 @@ def shiftForBranch(objs):
                 yy=item['pos'][0][1]+item['size'][1]
                 if ty<yy:
                     ty=yy
-        for item in objs[0]:
-            if item['type']==1:
-                p0=item['pos'][0][0]
-                p1=item['pos'][0][0]+item['size'][0]
-                if p0<x1 and x0<p1:
-                    yy=item['pos'][0][1]-item['size'][1]/2
-                    if by>yy:
-                        by=yy
-        shift=ty-by+100
+        for j in range(i):
+            for item in objs[j]:
+                if item['type']==1:
+                    p0=item['pos'][0][0]
+                    p1=item['pos'][0][0]+item['size'][0]
+                    if p0<x1 and x0<p1:
+                        yy=item['pos'][0][1]-item['size'][1]/2
+                        if by>yy:
+                            by=yy
+#        shift=ty-by+100
+#        shift=shift+ty-by+page.scale*100
+        shift=ty-by+page.scale*100
+        s.append(shift)
         fool=0
         for item in objs[i]:
             if fool==0:
@@ -1159,15 +1196,87 @@ def shiftForBranch(objs):
             item['pos'][0][1]-=shift
             if item['type']==2:
                 item['pos'][1][1]-=shift
+# add 2025/12/03
+#  shift arrow destination
+#
+    for i in range(1,len(objs)):
+        objs[i][0]['pos'][1][1]-=s[ivt[i]]
+
+#komai
+def lineCommutator(objs,ivt):
+    start_obj=0
+    for i in range(1,len(objs)):
+        print("obj",i,objs[i][-1]['pos'][0][0])
+        if objs[start_obj][-1]['pos'][0][0]>objs[i][-1]['pos'][0][0]:
+            start_obj=i
+    print("start_obj",start_obj)
+    if start_obj==0:
+        return objs,ivt
+    new_objs=[]
+
+    for n,item in enumerate(objs[0]):
+        print("-->",n,item)
+    print("<--",objs[start_obj][0])
+
+#    print(objs)
+    return objs,ivt
 
 def lineBraker(page,objs):
+
     for j in range(len(objs[0])-1,-1,-1):
         item=objs[0][j]
         xx=item['pos'][0][0]+item['size'][0]
         if xx>page.width/page.scale*0.9:
             cutIt(page,objs,item['pos'][0][0])
+#komai
+def askBottom(item):
+    if item['type']==1:
+        return item['pos'][0][1]-item['size'][1]/2.0
+    return item['pos'][0][1]
+
+def askTop(item):
+    if item['type']==1:
+        return item['pos'][0][1]
+    return item['pos'][0][1]+item['size'][1]/2.0
 
 def cutIt(page,objs,ok):
+    theWidth=page.width/page.scale*0.9
+    print("---------------> in cutIt",int(theWidth),ok)
+    by=False;ty=False
+    for obj in objs:
+        for item in obj:
+            xx=item['pos'][0][0]+item['size'][0]
+            if xx<theWidth:
+                yy=askBottom(item)
+
+                if by==False:
+                    by=yy
+                else:
+                    if by>yy:
+                        by=yy
+#            else:
+            elif xx<theWidth*2:
+                yy=askTop(item)
+                if ty==False:
+                    ty=yy
+                else:
+                    if ty<yy:
+                        ty=yy
+
+    shift=ty-by+page.mg
+    for obj in objs:
+        for item in obj:
+            xx=item['pos'][0][0]+item['size'][0]
+            if xx>theWidth:
+                print(item)
+                item['pos'][0][0]-=(ok-page.width*0.1)
+                item['pos'][0][1]-=shift
+                if item['type']==2:
+                    item['pos'][1][0]-=(ok-page.width*0.1)
+                    item['pos'][1][1]-=shift
+                print(item)
+
+def xcutIt(page,objs,ok):
     theWidth=page.width/page.scale*0.9
     by=False;ty=False
     for obj in objs:
@@ -1199,11 +1308,14 @@ def cutIt(page,objs,ok):
                 else:
                     if ty<yy:
                         ty=yy
+    print("in cutIt")
     shift=ty-by+page.mg
     for obj in objs:
         for item in obj:
             xx=item['pos'][0][0]+item['size'][0]
+            print(item,xx)
             if xx>theWidth:
+                print(xx,"<--- shift")
                 item['pos'][0][0]-=(ok-page.width*0.1)
                 item['pos'][0][1]-=shift
                 if item['type']==2:
@@ -1229,115 +1341,164 @@ def stackGoal(connect,n,line,tag,i=1):
 
     ret=[connect[n][2][i],line,tag]
     if len(connect[n][7])>0:
-        ret[2]+=1
+        ret[2]=ret[2]+1
 
     return ret
 
-def getNext(c,tmp_goal):
+def getNext(c):
     if len(c)>0:
         return c[0]
     return -1
 
+def getDepth(c,n,p):
+    depth=[]
+    while len(c[n][2])>0:
+        if len(c[n][2])>1:
+            depth.extend(getDepth(c,c[n][2][1],p))
+        n=c[n][2][0]
+        p=p+1
+    depth.extend([p])
+    return depth
+
+def whichIsLongerP(connect,n):
+    root=connect[n][2]
+    x1=max(getDepth(connect,root[0],0))
+    x2=max(getDepth(connect,root[1],0))
+    if x1>x2:
+        return 0
+    return 1
+
+def whichIsLonger(connect,n):
+
+    x0=0;p=0
+    for n,root in enumerate(connect[n][2]):
+        x1=max(getDepth(connect,root,0))
+        if x1>x0:
+            p=n;x0=x1
+    return p
+
 def makeObject(page,connect,fsize):
 
+    ugly=0
     line=0
-    objs=[];hint=[];tmp_goal=[];xx=0
+    objs=[];tmp_goal=[];xx=0
 #
-# find goal
+# find goal with patch
 #
-    n=0
-#    connect[13][3]=6
-#    print(connect,len(connect))
+    goal=-1
     for i in range(len(connect)):
         if connect[i][3]<0:
-            goal=n=i
-            break
+            if goal<0:
+                goal=n=i
+            else:
+                connect[goal][2].append(i)
+                connect[i][3]=goal
+
+#    print("this:",connect[n][2])
+#    connect[n][2]=[9,12]
 #
 # temporal base y=0
 #
-    tag=0;obj=[]
-#    fn=getName(n,connect[n][6]+1,dr='') # goal
-    hint.append([]) # to which the line connect (line,tag)
-
     try:
         l=len(connect[n][2])
     except:
         l=0
-
-    if l>1:
-        tmp_goal.append(stackGoal(connect,n,line,tag))
-
-    while n>-1:
-        item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-        l=len(connect[n][2])
-        if l>1:
-            for i in range(1,l):
-                tmp_goal.append(stackGoal(connect,n,line,tag+i,i=i))
-
-        item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-
-        if l<1:
-            item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
-            objs.append(obj);line+=1
-            break
-        n=getNext(connect[n][2],tmp_goal)
-
+    tmp_goal.append([n,-1,0])
+    ivt=[0]
     while len(tmp_goal)>0:
-        r=tmp_goal.pop()
-        n=r[0];obj=[];tag=0
-#        hint.append([r[1],r[2]]) # to which the line connect (line,tag)
-#        item=objs[r[1]][r[2]] # original 20250904
-        item=objs[r[1]][r[2]-1] # connecting position
-#        x0=item['pos'][0][0]-page.mg
-        x0=item['pos'][0][0]-page.mg
-        y0=item['pos'][0][1]+item['size'][1]/2
-#        item=objs[r[1]][r[2]+2]
-        ln=item['size'][0]
-#        xx=x0-ln
-        xx=x0-ln
-        item=setItem(2,[[xx,0],[x0,y0]],[],[ln,0]);
-        obj.append(item);tag+=1
-
-        n=getNext(connect[n][2],tmp_goal)
-        if n>-1:
-            item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-            item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-
-        if len(connect[n][2])<1:
-            item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
-            objs.append(obj)
-            n=-1
-        else:
-            n=getNext(connect[n][2],tmp_goal)
-
+        r=tmp_goal.pop(0);n=r[0];obj=[];tag=0
+        if r[1]>-1:
+            item=objs[r[1]][r[2]-1] # connecting position
+            x0=item['pos'][0][0]-page.mg
+            y0=item['pos'][0][1]+item['size'][1]/2
+            ln=item['size'][0]
+            xx=x0-ln
+            item=setItem(2,[[xx,0],[x0,y0]],[],[ln,0]);# arrow
+            obj.append(item);tag+=1
+            n=getNext(connect[n][2])
+        
         while n>-1:
-# catalysis object
+            ugly=ugly+1
+            if ugly>50:
+                n=-1
+            item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
             l=len(connect[n][2])
-            if l>1:
-                for i in range(1,l):
-                    tmp_goal.append(stackGoal(connect,n,line,tag+i,i=i))
+            longer_path=0
+            if l>2:
+                longer_path=whichIsLonger(connect,n)
+                path=connect[n][2][longer_path]
+
+                if longer_path==0:
+                    for i in range(1,l):
+                        tmp_goal.append(stackGoal(connect,n,line,tag,i=i))
+                        ivt.append(line)
+                else:
+                    tmp_goal.append(stackGoal(connect,n,line,tag,i=longer_path))
+                    ivt.append(line)
+                    for i in range(1,l):
+                        if i!=longer_path:
+                            tmp_goal.append(stackGoal(connect,n,line,tag,i=i))
+                            ivt.append(line)
+
+                    p1=connect[n][2][0] #[16,20]
+                    p2=path
+                    if connect[p2][0]=="":
+                        # a2:[parenet], a3:child(<0)
+                        p3=connect[p2][2][0]
+                        connect[p2][2]=[p1]
+                        connect[n][2][0]=p3# 13
+                    else:
+
+
+                if l>3:
+                    print("more than tripple....",l)
+
+            elif l>1:
+                longer_path=0
+                longer_path=whichIsLonger(connect,n)
+                if longer_path==1:
+                    try:
+                        p1=connect[n][2][0] #[16,20]
+                        p2=connect[n][2][1] #[16,20]
+                        p3=connect[p1][2][0] # 13
+                        p4=connect[p2][2][0] # 15
+                        connect[p1][2][0]=p4
+                        connect[p2][2][0]=p3# 
+                    except:
+                        print("catch error in makeObject","do nothing");
+
+                    # p1 -> 13, p2 -> 15
+#                    connect[p2][2][0]=connect[p1][2][0]# <-- wrong
+                tmp_goal.append(stackGoal(connect,n,line,tag+1))
+                ivt.append(line)
 
             item,xx=getCatObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-            item,xx=getSubObj(page,n,connect,fsize,xx);obj.append(item);tag+=1
-# up to now
-            if l<1:
-                objs.append(obj);line+=1
+            if l<1:# when at the terminal, add the onset material
+                item,xx=getSubObj(page,n,connect,fsize,xx,onset=True);obj.append(item);tag+=1
                 break
-                n=getNext(connect[n][2],tmp_goal)
+            n=getNext(connect[n][2])
+        objs.append(obj);line+=1
 
-    xx=0
+    xx=0;ty=-topH()
     for obj in objs:
         for item in obj:
             if xx>item['pos'][0][0]:
                 xx=item['pos'][0][0]
+            if item['type']==1:
+                yy=item['pos'][0][1]-item['size'][1]/2.0
+            else:
+                yy=item['pos'][0][1]
+            if ty<yy:
+                ty=yy
 
     for obj in objs:
         for item in obj:
             for i in range(len(item['pos'])):
                 item['pos'][i][0]-=xx
+                item['pos'][i][1]=item['pos'][i][1]-ty+topH()*0.1
 
     if len(objs)>0:
-        shiftForBranch(objs)
+        shiftForBranch(page,objs,ivt)
         lineBraker(page,objs)
 
     return objs
@@ -1435,3 +1596,39 @@ def getLink(smiles,index):
 
     return ret
 
+def saveExcel(yys,label,title,filename):
+    wb=Workbook()
+    ws=wb.active
+
+    ws.title="summary"
+
+    for n,t in enumerate(title,3):
+        ws.cell(row=2,column=n,value=t)
+
+    for n,ys in enumerate(yys,3):
+        print("<-->",n,yys[ys])
+        for m,y in enumerate(yys[ys],3):
+            ws.cell(row=n,column=m,value=y)
+
+    if label!=False:
+        for n,l in enumerate(label,3):
+            ws.cell(row=n,column=2,value=l)
+
+
+    p=['B','K']
+
+    i=0
+    for i in range(4):
+        chart=BarChart()
+        chart.type="col";chart.style=10+i;chart.title=None;
+        chart.y_axis.title=title[i];chart.shape=4+i;chart.legend=None
+    
+        data=Reference(ws,min_col=3+i,max_col=3+i,min_row=2,max_row=2+len(yys))
+        cats=Reference(ws,min_col=2,min_row=3,max_row=2+len(yys))
+        chart.add_data(data,titles_from_data=True)
+        chart.set_categories(cats)
+
+        ws.add_chart(chart,p[i//2]+str(10+i%2*18))
+
+
+    wb.save(filename)

@@ -91,7 +91,6 @@ def addLog(mes):
     with open(debug_log,"a") as fp:
         fp.write(mes+"\n")
 
-max_route=7
 debug=True
 debug=False
 
@@ -231,7 +230,7 @@ if oper=='drop':
     dr="/var/www/html/public/images"
     if pid=="all":
         pid=getPids(cur);
-
+  
 #    with open(debug_log,"w") as fp:
 #        fp.write(pid+":remove\n")
 
@@ -334,7 +333,12 @@ if _web:
     if not os.path.isdir(input_dir):
         os.makedirs(input_dir,exist_ok=True)
     log_name=input_dir+"/readDb"+str(pid)+"normal.log"
+    if os.path.isfile(log_name):
+        os.remove(log_name)
     index_file=input_dir+"/readDb"+str(pid)+"index.txt"
+    if os.path.isfile(index_file):
+        os.remove(index_file)
+
     output_file=input_dir+output_file
 #    print(input_dir)
 #    exit()
@@ -378,7 +382,7 @@ if scale>0.5:
 if scale<0.05:
     scale=0.05
 
-page=openReport(output_file,scale)
+page=openReport(output_file,scale,title=chemical)
 
 allId={}
 cur=conn.cursor()
@@ -456,9 +460,13 @@ else:
 page.scale=scale
 py=page.height/page.scale-page.mg
 for name,route in enumerate(theList):
+    fp=open("/var/www/html/public/images/report/ok.log","a")
+    fp.write("Route"+str(route)+"\n")
+    fp.close()
     print("---------->  Route"+str(route))
     now=str(int(time.time()-start))+" sec"
     ddd=dst+"/"+str(route)+"/"
+    print("images from",ddd)
     with open(index_file,"a") as fp:
         fp.write(f"{name+1}:{route}\n")
     with open(log_name,"a") as fp:
@@ -466,14 +474,17 @@ for name,route in enumerate(theList):
     connect=allData[route]['connect']
     smiles=allData[route]['smiles']
     info=allData[route]['info']
+#    print("smiles",smiles)
+    print("connect",connect)
     fc,image_size=makeSvg(smiles,ddd)
 
     if not _fc:
         fc=_fc
 
     page.setFont()
-
     objs=makeObject(page,connect,image_size)
+
+#    print("objs",objs)
 
     stack=[]
     top=-page.height;btm=page.height*10.0
@@ -490,13 +501,15 @@ for name,route in enumerate(theList):
                 if ttt<item['pos'][0][1]:
                     ttt=item['pos'][0][1]
 
-#    ttt=0
+    ttt=0
     for obj in objs:
         for item in obj:
             x0=item['pos'][0][0];y0=item['pos'][0][1]
             if item['type']==1:
 #                page.drawImage(ddd+item['svg'][0],x0,y0)
-                rr=chkProc(ddd,item['svg'][0])
+                rr=chkProc(ddd+"/svgFile.info",item['svg'][0])
+                if not rr[1]:
+                    continue
                 stack.append([1,x0,y0,ddd+item['svg'][0]])
 #                print("this",x0,y0)
                 btm,top=getMaxMin(y0,btm,top)
@@ -508,7 +521,7 @@ for name,route in enumerate(theList):
                     xx=xx+page.mg
                     r=image_size[fn]
 #                    page.drawImage(ddd+fn,xx,y0+page.mg)
-                    rr=chkProc(ddd,fn)
+                    rr=chkProc(ddd+"/svgFile.info",fn)
                     stack.append([1,xx,y0+page.mg,ddd+fn])
                     btm,top=getMaxMin(y0+page.mg,btm,top)
                     btm,top=getMaxMin(y0+page.mg+rr[1][1],btm,top)
@@ -555,7 +568,7 @@ for name,route in enumerate(theList):
             py=page.height/page.scale-page.mg
             page.stroke()
         else:
-            py=py+(xx[0]-xx[1])-page.mg*5
+            py=py+(xx[0]-xx[1])-page.mg*15
 
 #    print("---------->  Route"+str(route))
 #    oy-=(hy*page.scale+page.mg)
