@@ -5,8 +5,11 @@ from rdkit import Chem
 from rdkit import DataStructs
 from rdkit.Chem.Fingerprints import FingerprintMols
 from rdkit.Chem.Scaffolds import MurckoScaffold
+from rdkit.Chem import rdFMCS
 from rdkit.Chem import Draw, rdMolDescriptors
 from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import Descriptors
+from rdkit.Chem import rdqueries
 from IPython.display import SVG
 
 from reportlab.graphics import renderPDF
@@ -20,12 +23,29 @@ from pptx.util import Inches, Pt, Cm
 from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 from PIL import Image
 import shutil
 import Levenshtein
 import sqlite3
 from dbTools import *
 import re
+
+import openpyxl
+import pandas as pd
+import unicodedata
+
+eflag=False
+
+def logout(mes):
+    with open ("/var/www/html/public/images/report/step2.txt","a") as fp:
+        if type(mes)==bool:
+            if mes==False:
+                fp.write("False\n")
+            else:
+                fp.write("True\n")
+        if type(mes)==str:
+            fp.write(mes+"\n")
 
 def testForSvg(statAll):
     print(statAll[69])
@@ -58,12 +78,8 @@ def getPrm(cur,pids,sout):
         prm[pid]=ret[0]
 
     for k,v in prm.items():
-#        print("*",k,v)
-#        print(type(v))
         for z,x in zip(sout,v):
-#            prmT[z].append(x)
             prmT[z][k]=x
-#            print("?",z,x)
 
     return prm,prmT
 
@@ -73,6 +89,8 @@ def easyGetReaction(pid,cur):
     sql=f'select * from "{sTable}";'
     ans=cur.execute(sql).fetchall()
     for xx in reversed(ans):
+        if xx[2]=="":
+            continue
         newInfo[int(xx[0])]=getLink(strToSmiles(xx[2]),index)
 
     newList,idx=getNewList(newInfo)
@@ -218,7 +236,14 @@ def numRing(stars):
             n+=1
     return int(n/2)
 
+def dict2Str(dct):
+    sss="";
+    for d in dct:
+        sss=sss+str(d)+":"+str(dct[d])+","
+    return sss
+
 def getBinder(sims):
+    global eflag
     cnt=0;tmp=sims
 
     while numRing(tmp)>0:
@@ -227,8 +252,18 @@ def getBinder(sims):
         p=Chem.MolFromSmiles(tmp)
         x=Chem.MolFromSmiles(r)
 #        tmp=Chem.MolToSmiles(Chem.ReplaceCore(p,x,labelByIndex=True))
-        tmp=Chem.MolToSmiles(Chem.ReplaceCore(p,x))
-#        print("-->",tmp)
+        try:
+            tmp=Chem.MolToSmiles(Chem.ReplaceCore(p,x))
+        except:
+            if eflag==False:
+                eflag=True
+                with open("statDb.err","a") as fp:
+                    for z in sout:
+                        sss=dict2Str(prmT[z])
+                        fp.write(z+" "+sss+"\n")
+                    fp.write("error in getBinder\n")
+                    fp.write("smiles:"+tmp+" core:"+r+"\n")
+            tmp=""
     return tmp
 
 def countRing(sims):
@@ -252,6 +287,13 @@ def outOfRing(mol):
 
 def getMolSequence(allData):
     mols=[];smis=[]
+#
+# ugly patch:
+#
+    if allData['smiles'][0][0]=='>':
+        tmp=['[Pu]']
+        allData['smiles'][0]=tmp+allData['smiles'][0]
+#    print(allData['smiles'][0])
 
     smiles,mol=getOpeningMaterial(allData['smiles'][0])
     mols.append(mol)
@@ -266,6 +308,38 @@ def list2str(ss):
     for s in ss:
         d=d+"["+str(s)+"]"
     return d
+
+def reArrange(hint):
+    stat=[{},{}]
+    i=0
+    maxLv=0
+    print(hint[0])
+    for h in hint[0]:
+        if len(h[0])>maxLv:
+            maxLv=len(h[0])
+
+    if maxLv>5:
+        maxLv=5
+    for h in hint[0]:
+        for lv in range(maxLv):
+            lvs="row"+str(lv+1).zfill(2)
+            if lv<len(h[0]):
+                llv=lv
+            else:
+                llv=len(h[0])-1
+            if not lvs in stat[i]:
+                stat[i][lvs]=[h[0][llv]]
+            else:
+                stat[i][lvs].append(h[0][llv])
+    i=1
+    for lv in range(len(hint[0])):
+        for h in hint[0][lv][0]:
+            lvs="routeType"+str(lv+1).zfill(2)
+            if not lvs in stat[i]:
+                stat[i][lvs]=[h]
+            else:
+                stat[i][lvs].append(h)
+    return stat
 
 def analyzeCoreChanges(mols):
     step=0;p1="";p3=[];p4=[];p5=[]
@@ -290,7 +364,16 @@ def analyzeCoreChanges(mols):
             p1=p1+"o"
 #            p3.append("o"+str(n))
             p3.append(n)
-    return [p1,len(mols)-1,p3,p4,p5,step]
+#    return [p1,len(mols)-1,p3,p4,p5,step]
+    return [p1,len(mols)-1,p3,p4,p5]
+
+def getAllIds(cur):
+    ret=cur.execute(f"""select id from searchList;""").fetchall()
+    if len(ret)>0:
+        return ret
+
+    print("maybe no records in this database")
+    exit()
 
 def getFirstIds(cur):
     pid=1
@@ -339,7 +422,17 @@ def xmerge(src):
         p=s
     return cc
 
-def xconv(src):
+def xconv(src,i):
+    match i:
+        case 0:
+            return src
+        case 1:
+            return str(src)
+        case 2:
+            return src
+        case 3:
+            return src
+
     cc="";depth=0;r="";rs=[]
 
     l=len(src)
@@ -366,6 +459,378 @@ def xconv(src):
 #    print("cc",dst)
     return dst
 
+def sayThis(tp):
+    match tp:
+        case 1:
+            print("core structure analyze")
+            print("structure changed","number of Ring","number of atoms outside Rings")
+            print("<-- route number (database), printed route number (in pdf)")
+        case 2:
+            print("route rearranging")
+            print("list of routes","member of route","starting substance")
+            print("<-- route number (database), printed route number (in pdf)")
+
+def output(fp,com):
+
+    if fp==True:
+        print(com,end="")
+    else:
+        fp.write(com)
+
+def addTable(page,data):
+    page.setFont(font_size=3)
+    sld=page.slide
+    page.drawStringR(5,5,"this is ...xx");
+    width=getWidth(data)
+    print(data)
+    df=pd.DataFrame(data)
+    height=len(data)
+    print(width[-1])
+    if width[-1]>100:
+        f=26.0/float(width[-1])
+        add_table(sld,df,1,1,1+int(width[-1]*f),1+height,int(50*f),width)
+    else:
+        add_table(sld,df,2,2,2+width[-1]*2/6,2+height,18,width)
+
+def xlen(sss):
+    if 'IamAnImage' in sss:
+        return 5
+    i=0
+    for s in sss:
+        t=unicodedata.east_asian_width(s)
+        if t=='H' or t=='Na' or t=='N':
+            i=i+1
+        else:
+            i=i+2
+    return i
+
+def getWidth(data):
+
+#    adjust..
+    w=[0]*len(data)
+    for n,k in enumerate(data):
+        l=xlen(k)+2
+        if w[n]<l:
+            w[n]=l
+        for d in data[k]:
+            l=xlen(str(d))+2
+            if w[n]<l:
+                w[n]=l
+    wx=0
+    for i in w:
+        wx=wx+i
+    w.append(wx)
+    return w
+
+def setId(d,ys,k):
+    d[k]=[]
+    for i in ys:
+        d[k].append(i)
+
+def setDDD(d,ys,k,n):
+#komai
+    d[k]=[]
+    for y in ys:
+        if n==1:
+            d[k].append("{:.2f}".format(ys[y][n]*100.0))
+        elif n==2:
+            d[k].append("{:.2f}".format(ys[y][n]))
+        elif n==3:
+            d[k].append(int(ys[y][n]))
+        else:
+            d[k].append(str(ys[y][n]))
+
+def setPic(d,p,k,s,sl):
+    d[k]=[]
+    for i in sl:
+        smiles=p[s][i]
+        dr="/var/www/html/public/images/tmp/"
+        if not os.path.exists(dr):
+            os.makedirs(dr)
+        fn=dr+str(i)+".svg"
+
+        mol=Chem.MolFromSmiles(smiles)
+        view = rdMolDraw2D.MolDraw2DSVG(200,200)
+
+        option=view.drawOptions()
+        option.circleAtoms=False
+        option.continuousHightlight=False
+
+        tm = rdMolDraw2D.PrepareMolForDrawing(mol)
+        view.DrawMolecule(tm)
+        view.FinishDrawing()
+
+        svg=view.GetDrawingText()
+
+        print(smiles,fn)
+
+        with open(fn,'w') as f:
+            f.write(svg)
+        cropSvg(fn)
+        gn=fn.split(".svg")[0]+".jpg"
+        subprocess.run(['/usr/bin/convert','-density','360',fn,gn])
+        d[k].append('IamAnImage:'+gn)
+
+def setDat(d,p,k,s,sl):
+    d[k]=[]
+    for i in sl:
+        if s=='factors' or s=='options':
+            r="".join(p[s][i].split("'"))
+            d[k].append(r)
+        else:
+            d[k].append(p[s][i])
+
+def getCellPosition(table,row,col):
+    table_gf = table._graphic_frame
+    x = table_gf._element.xfrm.off.x
+    y = table_gf._element.xfrm.off.y
+
+    cell_left = x
+    cell_top = y
+    cell_height = table.rows[0].height
+    cell_width = table.columns[0].width
+
+    for r in range(row):
+        cell_height = table.rows[r].height
+        cell_top += cell_height*1.55
+
+    for c in range(col):
+        cell_width = table.columns[c].width
+        cell_left += cell_width
+
+    cell_height = table.rows[row].height
+    cell_width = table.columns[col].width
+
+    return cell_left, cell_top, cell_width, cell_height
+
+#komai
+def countTheAtom(mol,C):
+    cnt=0
+    for atom in mol.GetAtoms():
+        if atom.GetSymbol()==C:
+            cnt=cnt+1
+    return cnt
+
+def isOrganicHalogen(smiles):
+    tg=['F','Cl','Br','I','At']
+    r=[];c=0
+
+    mol=Chem.MolFromSmiles(smiles)
+    for atom in mol.GetAtoms():
+        s=atom.GetSymbol()
+        if s=='C':
+            c=c+1
+        if s in tg:
+            if not s in r:
+                r.append(s)
+    if c>0 and len(r)>0:
+        return True,r
+    return False,r
+
+def fullCouplingList(theRoute,allData):
+    hit={};f=[]
+    for route in theRoute:
+        flag=True;c0=0;n0=0
+        for m,smiles in enumerate(allData[route]['smiles']):
+#            print("--->",m,smiles)
+            l=len(smiles)-1
+#            if l<3:
+            if l!=3:
+                continue
+            for i in range(l-1):
+                now=smiles[i]
+                check,halogens=isOrganicHalogen(now)
+#                print("isOrganic",f,now,i,l)
+                if check:
+#                    if chkCoupling(f,now,smiles[l],smiles):
+                    f,cc=chkCoupling(halogens,now,smiles[l],smiles)
+                    if f:
+                        if flag:
+                            print("route <-------------------------",route)
+                            flag=False
+                        if not route in hit:
+                            hit[route]=[]
+                        hit[route].append([m,now,smiles[1-i],smiles[3]])
+#                        hit[route].append([m,now,cc[0]+"-"+cc[1]+"+"+cc[2]+"-"+cc[3]+"->"+smiles[3]])
+
+    return {'crossCoupling':hit}
+
+
+def isOrganicMetal(mol):
+    ret=[]
+
+    metal_symbols = {
+            'Mg','Zn','Sn','B','Si','Pd'
+            }
+    xmetal_symbols = {
+        'Li', 'Be', 'Na', 'Mg', 'Al', 'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr', 'Mn',
+        'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr',
+        'Rb', 'Sr', 'Y', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
+        'In', 'Sn', 'Sb', 'Te', 'I', 'Xe', 'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd',
+        'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 'Hf',
+        'Ta', 'W', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 'Po',
+        'At', 'Rn', 'Fr', 'Ra', 'Ac', 'Th', 'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm',
+        'Bk', 'Cf', 'Es', 'Fm', 'Md', 'No', 'Lr', 'Rf', 'Db', 'Sg', 'Bh', 'Hs',
+        'Mt', 'Ds', 'Rg', 'Cn', 'Nh', 'Fl', 'Mc', 'Lv', 'Ts', 'Og'
+    }
+
+    for atom in mol.GetAtoms():
+        if atom.GetSymbol() in metal_symbols:
+            ret.append(atom.GetSymbol())
+    return ret
+
+def chkByHalogenNum(smiles,f):
+    flag=False;n=0
+    for s in smiles:
+        if s=='>':
+            flag=True
+        else:
+            m=countTheAtom(Chem.MolFromSmiles(s),f)
+            if flag:
+                n=n-m
+            else:
+                n=n+m
+    if n>0:
+        return True
+    return False
+
+def chkCoupling(halogens,material,product,smiles):
+#    print(smiles)
+    mol1=Chem.MolFromSmiles(material)
+    mol2=Chem.MolFromSmiles(product)
+    flag=False
+    for f in halogens:
+        M=False;R2=False
+        R1=Chem.DeleteSubstructs(mol1,Chem.MolFromSmiles(f))
+        if not chkByHalogenNum(smiles,f):
+            continue
+        if mol2.HasSubstructMatch(R1):
+            if material==smiles[0]:
+                mp=smiles[1]
+                material_pair=Chem.MolFromSmiles(smiles[1])
+            else:
+                mp=smiles[0]
+                material_pair=Chem.MolFromSmiles(smiles[0])
+
+#            R3=Chem.DeleteSubstructs(mol2,R1)
+#            R3s=Chem.MolToSmiles(R3)
+            mols=[mol2,material_pair]
+            res=rdFMCS.FindMCS(mols)
+            R2=Chem.MolFromSmarts(res.smartsString)
+
+            mols=[mol2,mol1]
+            res=rdFMCS.FindMCS(mols)
+            R1a=Chem.MolFromSmarts(res.smartsString)
+
+            M=Chem.DeleteSubstructs(material_pair,R2)
+#            print(material,product,R3s)
+#            print("R2",Chem.MolToSmiles(R2),"R3",Chem.MolToSmiles(R3))
+#            print(R2s,R3s)
+
+            if isOrganicMetal(M):
+                c2=True
+            else:
+                c2=False
+
+            if c2:
+                flag=True
+                print(smiles)
+                print("material",material,f)
+                print("pair    ",mp)
+                print("product ",product)
+                print("R1      ",Chem.MolToSmiles(R1))
+                print("R1a     ",Chem.MolToSmiles(R1a))
+                print("R2      ",Chem.MolToSmiles(R2))
+                print("M       ",Chem.MolToSmiles(M))
+#        else:
+#            print("not:",Chem.MolToSmiles(mol2),Chem.MolToSmiles(R1))
+    return flag, [f,R1,M,R2]
+
+def couplingList(theRoute,allData):
+    hit=[];f=[]
+    for route in theRoute:
+        flag=True;c0=0;n0=0
+        for m,smiles in enumerate(allData[route]['smiles']):
+            l=len(smiles)-1
+            if l!=3:
+                continue
+            for i in range(l-1):
+                now=smiles[i]
+                check,halogens=isOrganicHalogen(now)
+                if check:
+                    f,_=chkCoupling(halogens,now,smiles[l],smiles)
+                    if f:
+                        if flag:
+                            flag=False
+                        if not route in hit:
+                            hit.append(route)
+    return {'crossCoupling':hit}
+
+def makeShowList(ys):
+    sl=[]
+    for k in ys:
+        sl.append(k)
+    return sl
+
+def add_table(sld, df, left, top, width, height, font_size, width_index):
+    '''
+    args:
+        slide[slide]: Slide object
+        df[DataFrame] : Display data
+        left[int]: Position from the left end
+        top[int] : Position from top
+        width[int]: Width of object
+        height[int]: Height of object
+        font_size[int]: Font size
+    return:
+        None
+    '''
+    dr="/var/www/html/public/images/tmp/"
+
+    shapes=sld.shapes
+    column_names = df.columns.tolist()
+    index_names = df.index.tolist()
+
+    col_num = len(column_names)
+    row_num = len(index_names) + 1
+
+    table = shapes.add_table(
+         row_num,
+         col_num,
+         Cm(left),
+         Cm(top),
+         Cm(width),
+         Cm(height)
+    ).table
+
+    # Columnの値を挿入
+    for i in range(col_num):
+        table.columns[i].width = Cm(width*width_index[i]/width_index[-1])
+        table.cell(0, i).text = column_names[i]
+        table.cell(0, i).text_frame.paragraphs[0].font.size = Pt(font_size)
+            # 中央揃え
+        table.cell(0, i).text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+
+    # セルの値を挿入
+    for i in range(1, row_num):
+        for j in range(col_num):
+            if 'IamAnImage' in str(df.iloc[i-1,j]):
+                fn=df.iloc[i-1,j].split(":")[1]
+                with open(fn,"rb") as fp:
+                    img=fp.read()
+                x,y,w,h=getCellPosition(table,i,j)
+                shapes.add_picture(fn,x,y,width=w,height=h)
+            else:
+                table.cell(i, j).text = str(df.iloc[i-1, j])
+            table.cell(i, j).text_frame.paragraphs[0].font.size = Pt(font_size)
+            # 中央揃え
+            if type(df.iloc[i-1,j])==str:
+                table.cell(i, j).text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+            else:
+                table.cell(i, j).text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
+#            table.cell(i, j).text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
+
+
 #########################################################
 ###################### main #############################
 #########################################################
@@ -374,8 +839,10 @@ com='-chem chemical_name, -ppt for power point -n [1,2,3] to specify routes -p p
 com+=" -summary 0/1/2"
 ops={'-h':com}
 
-ppt=False;skip=False;hit_id=False
-ids=[];mode="normal";full=True
+ppt=False;skip=False;hit_id=False;stdout=True
+ids=[];mode="normal";full=True;tp=1;label=False;fn=False
+excel_file_name=False;items="1,2,3";
+
 for n,op in enumerate(sys.argv):
     if hit_id:
         if op[0]!='-':
@@ -391,31 +858,53 @@ for n,op in enumerate(sys.argv):
             print(version);exit()
         case '-ppt':
             ppt=True
+        case '-items':
+            items=sys.argv[n+1]
+            skip=True
+        case '-type':
+            tp=int(sys.argv[n+1])
+            skip=True
         case '-simple':
             full=False
         case '-ids':
             hit_id=True
+        case '-label':
+            label=sys.argv[n+1].split(',')
         case '-database':
             db=sys.argv[n+1]
             skip=True
         case '-forEval':
             mode="forEval"
+        case '-stdout':
+            stdout=open(sys.argv[n+1],"w")
+            skip=True
+        case '-excel_file_name':
+            excel_file_name=sys.argv[n+1]
         case '-d':
             input_dir=sys.argv[n+1]
             skip=True
 
 conn=sqlite3.connect(db)
 cur=conn.cursor()
+error=False
 
-if len(ids)<1 or ids[0]<1:
-    ids[0]=getFirstIds(cur)
+if len(ids)<1:
+    ids.append(getFirstIds(cur))
+elif ids[0]==0:
+    ret=getAllIds(cur)
+    ids=[]
+    for id in ret:
+        ids.append(id[0])
+    pid=ids[0]
 
 print("ids",ids)
 
 ret=cur.execute(f"""select * from searchList;""")
 descr=cur.description
 
-page=openReport("test.txt",0.5)
+if tp!=4:
+    page=openReport("test.txt",0.5)
+    page.setOutput(stdout);
 
 sout=[]
 for d in descr:
@@ -442,6 +931,7 @@ for id in ids:
 #    print("h",h,"\n",len(h),"\n")
 #exit()
 result={}
+ys={}
 for id in ids:
     ret=cur.execute(f"""select user,date from searchList where id='{id}';""")
     ret=ret.fetchall()
@@ -459,12 +949,16 @@ for id in ids:
 #    print(id,hint[id])
 
 ox=40
+fcl={}
 ##############################################################
 for id in ids:
     sTable=f"searchTable{id}"
     ans=cur.execute(f"""select * from {sTable};""").fetchall()
     if len(ans[0][1].split(";"))<2:
-        print("no route");continue
+        output(stdout,f"no route {id}\n")
+        if tp==3:
+            ys[id]=[0,0.0,0,0]
+        print(f"no route {id}");continue
 
     allData={};routes=[];newInfo={};index={}
     for xx in ans:
@@ -496,83 +990,79 @@ for id in ids:
         theRoute=simple_route
 
     hint=getReactionSummary(newList,idx)
-
     nextIndex=makeNextIndex(theRoute,hint[3])
 
-    print("core structure analyze")
-    print("structure changed","number of Ring","number of atoms outside Rings")
-    print("<-- route number (database), printed route number (in pdf)")
-    statAll={};stat=[{},{},{},{},{}]
-    for route in theRoute:
-        mols,smis=getMolSequence(allData[route])
+    statAll={};
+    if tp==3 or tp==4:
+        p1=len(full_route)
+        p2=float(p1)/float(prmT['loop'][id])
+        p3=0
+        allSmis=[]
+        for route in theRoute:
+            mols,smis=getMolSequence(allData[route])
+            for s in allData[route]['smiles']:
+                if s not in allSmis:
+                    allSmis.append(s)
+            p3=p3+len(mols)-1
+        p3=float(p3)/float(p1)
+        ys[id]=[p1,p2,p3,len(allSmis)]
+
+    match tp:
+#        case 4:
+#        case 3:
+#            print(id,result[id]['routeNumber'],result[id]['chemicalNumber'],result[id]['fullRouteNumber']);
+        case 1:
+            stat=[{},{},{},{},{}]
+            ppp=0
+            for route in theRoute:
+                mols,smis=getMolSequence(allData[route])
 #    [coreChange,coreCNum,ringNum,outOfRings]=analyzeCoreChanges(mols)
-        r=analyzeCoreChanges(mols)
-#        print(r[0],list2str(r[3]),list2str(r[2]),list2str(r[4]),"<--",route,nextIndex[route],r[1])
-        statAll[route]=r
-        for i in range(5):
-            match i:
-                case 0:
-                    st=r[i]
-                case 1:
-                    st=r[i]
-                case 2:
-                    st=list2str(r[i])
-                case 3:
-                    st=list2str(r[i])
-                case 4:
-                    st=list2str(r[i])
+                r=analyzeCoreChanges(mols)
+#                print(r[0],list2str(r[3]),list2str(r[2]),list2str(r[4]),"<--",route,nextIndex[route],r[1])
 
-            if not st in stat[i]:
-                stat[i][st]=[route]
-            else:
-                stat[i][st].append(route)
+                statAll[route]=r
+                for i in range(len(r)):
+                    if type(r[i])==list:
+                        st=list2str(r[i])
+                    else:
+                        st=r[i]
 
-#    for i in range(5):
-#        print(i,"<----------------------------")
-#        for key in sorted(stat[i]):
-#            print(key,list2str(stat[i][key]))
+                    if not st in stat[i]:
+                        stat[i][st]=[route]
+                    else:
+                        stat[i][st].append(route)
+        case 2:
+            stat=reArrange(hint)
+            stat.append(couplingList(theRoute,allData))
+            print(stat[-1])
+            ppp=1
+        case 5:
+            fcl[id]=fullCouplingList(theRoute,allData)
 
-#testForSvg(statAll):
+    if tp==3 or tp==4:
+        continue
+    if tp==5:
+        continue
 
-    print(f"start-forEval for {id}")
-    print("key1")
-    i=0
-    for key in sorted(stat[i]):
-        print("##"+key,end="#")
-        for route in stat[i][key]:
-            print(str(route),end=",")
-    print("\nkey2")
-    i=1
-    for key in sorted(stat[i]):
-        print("##"+str(key),end="#")
-        for route in sorted(stat[i][key]):
-            print(str(route),end=",")
-    print("\nkey3")
-    i=2
-    for key in sorted(stat[i]):
-        print("##"+str(key),end="#")
-        for route in sorted(stat[i][key]):
-            print(str(route),end=",")
-    print("\nkey4")
-    i=3
-    for key in sorted(stat[i]):
-        print("##"+str(key),end="#")
-        for route in sorted(stat[i][key]):
-            print(str(route),end=",")
-    print("\nkey5")
-    i=4
-    for key in sorted(stat[i]):
-        print("##"+str(xconv(key)),end="#")
-        for route in sorted(stat[i][key]):
-            print(str(route),end=",")
-    print("\nend-forEval")
-
+    output(stdout,f"start-forEval for {id}\n")
+    for i in range(len(stat)):
+#        print(stat[i])
+        output(stdout,"key"+str(i+1)+"\n")
+        for key in sorted(stat[i]):
+            output(stdout,"##"+xconv(key,i)+"#")
+            for route in sorted(stat[i][key]):
+                output(stdout,str(route)+",")
+        output(stdout,"\n")
+    output(stdout,"end-forEval\n")
+#
 #  for drawImages
-    print(f"start-forDraw for {id}")
-    for key in sorted(stat[0]):
-        for route in stat[0][key]:
+#
+    output(stdout,f"start-forDraw for {id}\n")
+    for key in sorted(stat[ppp]):
+        for route in stat[ppp][key]:
             ddd=dst+"/"+str(route)+"/"
-            print("route"+str(route)+"\npath:"+ddd.split("/var/www/html/public")[1],end=";")
+#            print("route"+str(route)+"\npath:"+ddd.split("/var/www/html/public")[1],end=";")
+            output(stdout,"route"+str(route)+"\npath:"+ddd.split("/var/www/html/public")[1]+";")
             xx=ox
             connect=allData[route]['connect']
             smiles=allData[route]['smiles']
@@ -595,10 +1085,114 @@ for id in ids:
                             xx+=r[0]
                         page.drawArrow(arrow(x0,y0,x1,y1,page.scale))
             page.stroke()
-            print("\n");
-    print("end-forDraw")
+            output(stdout,"\n\n");
+    output(stdout,"end-forDraw\n")
+
+if tp==5:
+    id_head=True
+    print(fcl)
+    output(stdout,f"start-forCrossCoupling\n")
+    output(stdout,'{"title":"Reaction with CrossCoupling",\n"body":\n{')
+    for xid in fcl:
+        cc=fcl[xid]['crossCoupling']
+        if len(cc)<1:
+            continue
+        if id_head!=True:
+            output(stdout,',\n')
+        output(stdout,'"id'+str(xid)+'":{\n')
+        id_head=False
+#        print("-->",fcl[xid])
+        headFlag1=True
+        if headFlag1!=True:
+            output(stdout,",")
+        else:
+            headFlag1=False
+        headFlag2=True
+        for pop in cc:
+            if headFlag2!=True:
+                output(stdout,",\n")
+            else:
+                headFlag2=False
+#            print(pop)
+            output(stdout,'"route'+str(pop)+'":{');
+            headFlag3=True
+            for c in cc[pop]:
+                if headFlag3!=True:
+                    output(stdout,",\n")
+                else:
+                    headFlag3=False
+#                output(stdout,'"step'+str(c[0]+1)+'":{"smiles":"'+c[1]+'"}');
+#                output(stdout,'"step'+str(c[0]+1)+'":"'+c[1]+'"');
+                output(stdout,'"step'+str(c[0]+1)+'":"'+c[2]+'"');
+#                output(stdout,'"step'+str(c[0]+1)+'":"'+c[1]+'+'+c[2]+'->'+c[3]+'"');
+            output(stdout,"}")
+        output(stdout,"}")
+    output(stdout,"}}\n")
+    output(stdout,f"end-forCrossCoupling\n")
+
+if tp==3:
+    title=["探索数","探索率","平均ステップ数","出現物質数"]
+    lll=[]
+    for l in label:
+        lll.append(",".join(l.split("__")))
+
+    for y in ys:
+        if excel_file_name==False:
+            excel_file_name="test.xlsx"
+    saveExcel(ys,lll,title,input_dir+"/"+excel_file_name)
+
+if stdout!=True:
+    stdout.close()
+    stdout=True
+
+if tp==4:
+    test_data = {
+    'Name': ['Alice', 'Bob', 'Charlie'],
+    'Age': ['25', '30', '35'],
+    'Occupation': ['Engineer', 'Designer', 'Doctor']
+    }
+    data={}
+    logout("items:"+items)
+    title=["探索数","探索率","平均ステップ数","出現物質数"]
+    title=["探索数","探索率","ステップ数","物質数"]
+
+    print("<----------------------------------")
+    print(prmT)
+    print("<----------------------------------")
+    print(ys)
+    print("<----------------------------------")
+    sl=makeShowList(ys)
+    items=items.split(',')
+    logout('0' in items)
+    if '0' in items:
+        setId(data,ys,'id',sl)
+    if '1' in items:
+        setDat(data,prmT,'物質名','substance',sl)
+    if '2' in items:
+        setDat(data,prmT,'化学式','smiles',sl)
+    if '3' in items:
+        setPic(data,prmT,'構造式','smiles',sl)
+    if '4' in items:
+        setDat(data,prmT,'要求数','loop',sl)
+    if '5' in items:
+        setDDD(data,ys,'探索数',0)
+    if '6' in items:
+        setDDD(data,ys,'探索率',1)
+    if '7' in items:
+        setDDD(data,ys,'合成ステップ数',2)
+    if '8' in items:
+        setDDD(data,ys,'出現物質数',3)
+    if '9' in items:
+        setDat(data,prmT,'重み','factors',sl)
+    if '10' in items:
+        setDat(data,prmT,'条件','options',sl)
+#    $item=array("id","物質名","SMILES","構造式(画像)","要求数","獲得数","探索率","合成ステップ数","出現物質数","探索経路の重み","探索条件");
+
+    page=openReport(input_dir+"/"+uid+"Table.pptx",0.5,title="table")
+
+    addTable(page,data)
+    page.close()
 #
 #        print(core)
 #        print(lastP)
 #        print("info",s['info'])
-#komai
